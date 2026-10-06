@@ -167,7 +167,23 @@ fn active_nested_start(buffer: &str, cursor: usize) -> usize {
             continue;
         }
 
-        if ch == '
+        if ch == char::from(36u8) {
+            if let Some((next_offset, '(')) = iter.peek().copied() {
+                let arithmetic = before[next_offset + 1..].starts_with('(');
+                if arithmetic {
+                    continue;
+                }
+
+                iter.next();
+                frames.push(Frame {
+                    kind: FrameKind::DollarParen,
+                    start: next_offset + 1,
+                    outer_quote: quote,
+                });
+                quote = QuoteStyle::None;
+                continue;
+            }
+        }
 
         if quote == QuoteStyle::None && matches!(ch, '<' | '>') {
             if let Some((next_offset, '(')) = iter.peek().copied() {
