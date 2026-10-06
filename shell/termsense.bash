@@ -61,6 +61,7 @@ __TERMSENSE_PREFIX=""
 __TERMSENSE_CANDIDATES=()
 __TERMSENSE_DISPLAYS=()
 __TERMSENSE_USAGE_KEYS=()
+__TERMSENSE_PALETTE_ACTIVE=0
 
 _termsense_binary() {
   if [[ -n "${TERMSENSE_BIN:-}" && -x "$TERMSENSE_BIN" ]]; then
@@ -131,13 +132,41 @@ _termsense_clear_overlay() {
   __TERMSENSE_GHOST_LEN=0
 }
 
+_termsense_capture_binding() {
+  local key="$1"
+  local prefix="\"${key}\":"
+  local line
+
+  while IFS= read -r line; do
+    if [[ "$line" == "$prefix"* ]]; then
+      printf '%s\n' "$line"
+      return 0
+    fi
+  done < <(
+    bind -p 2>/dev/null
+    bind -s 2>/dev/null
+    bind -X 2>/dev/null || true
+  )
+}
+
+_termsense_restore_binding() {
+  local spec="$1"
+  local key="$2"
+
+  if [[ -n "$spec" ]]; then
+    bind "$spec" 2>/dev/null || true
+  else
+    bind -r "$key" 2>/dev/null || true
+  fi
+}
+
 _termsense_restore_navigation() {
-  bind '"\e[A": previous-history' 2>/dev/null || true
-  bind '"\e[B": next-history' 2>/dev/null || true
-  bind '"\e[C": forward-char' 2>/dev/null || true
-  bind '"\e[D": backward-char' 2>/dev/null || true
-  bind '"\C-i": complete' 2>/dev/null || true
-  bind '"\e": prefix-meta' 2>/dev/null || true
+  _termsense_restore_binding "$__TERMSENSE_BIND_UP" '\e[A'
+  _termsense_restore_binding "$__TERMSENSE_BIND_DOWN" '\e[B'
+  _termsense_restore_binding "$__TERMSENSE_BIND_RIGHT" '\e[C'
+  _termsense_restore_binding "$__TERMSENSE_BIND_LEFT" '\e[D'
+  _termsense_restore_binding "$__TERMSENSE_BIND_TAB" '\C-i'
+  _termsense_restore_binding "$__TERMSENSE_BIND_ESC" '\e'
 }
 
 _termsense_activate_navigation() {
@@ -160,12 +189,14 @@ _termsense_reset_state() {
 }
 
 _termsense_dismiss() {
+  __TERMSENSE_PALETTE_ACTIVE=0
   _termsense_clear_overlay
   _termsense_reset_state
   _termsense_restore_navigation
 }
 
 _termsense_query() {
+  local limit="${1:-24}"
   local ts
   ts="$(_termsense_binary)" || return 1
 
@@ -184,7 +215,7 @@ _termsense_query() {
       __TERMSENSE_PREFIX="${READLINE_LINE:start:end-start}"
       first=0
     fi
-  done < <("$ts" suggest "$READLINE_LINE" --cursor "$READLINE_POINT" --limit 24 2>/dev/null)
+  done < <("$ts" suggest "$READLINE_LINE" --cursor "$READLINE_POINT" --limit "$limit" 2>/dev/null)
 
   (("${#__TERMSENSE_CANDIDATES[@]}" > 0))
 }
@@ -203,7 +234,10 @@ _termsense_draw_overlay() {
 
   local selected="${__TERMSENSE_CANDIDATES[__TERMSENSE_SELECTED]}"
   local suffix=""
-  if [[ "$TERMSENSE_GHOST" != "0"         && "$READLINE_POINT" -eq "${#READLINE_LINE}"         && "$selected" == "$__TERMSENSE_PREFIX"* ]]; then
+  if [[ "$TERMSENSE_GHOST" != "0" \
+        && -n "$__TERMSENSE_PREFIX" \
+        && "$READLINE_POINT" -eq "${#READLINE_LINE}" \
+        && "$selected" == "$__TERMSENSE_PREFIX"* ]]; then
     suffix="${selected:${#__TERMSENSE_PREFIX}}"
   fi
 
@@ -248,16 +282,21 @@ _termsense_draw_overlay() {
 }
 
 _termsense_refresh() {
-  [[ "$TERMSENSE_AUTO_SUGGEST" != "0" ]] || return 0
+  if [[ "$TERMSENSE_AUTO_SUGGEST" == "0" && "$__TERMSENSE_PALETTE_ACTIVE" == "0" ]]; then
+    return 0
+  fi
 
   local left="${READLINE_LINE:0:READLINE_POINT}"
-  if [[ -z "${left//[[:space:]]/}" ]]; then
+  if [[ -z "${left//[[:space:]]/}" && "$__TERMSENSE_PALETTE_ACTIVE" == "0" ]]; then
     _termsense_dismiss
     return 0
   fi
 
+  local limit=24
+  [[ "$__TERMSENSE_PALETTE_ACTIVE" != "0" ]] && limit=500
+
   __TERMSENSE_SELECTED=0
-  if _termsense_query; then
+  if _termsense_query "$limit"; then
     _termsense_draw_overlay
   else
     _termsense_dismiss
@@ -316,89 +355,22 @@ _termsense_ctrl_space() {
   local ts
   ts="$(_termsense_binary)" || {
     _termsense_dismiss
-    printf '\nTermSense binary not found in PATH.\n' >&2
+    printf '\nTermSense binary not found.\n' >&2
     return 1
   }
 
-  _termsense_clear_overlay
+  __TERMSENSE_PALETTE_ACTIVE=1
+  __TERMSENSE_SELECTED=0
 
-  local -a candidates=()
-  local -a displays=()
-  local -a usage_keys=()
-  local value display _kind _source _score start end usage_key
-  local replace_start=$READLINE_POINT
-  local replace_end=$READLINE_POINT
-  local prefix=""
-  local first=1
-
-  while IFS=$'\t' read -r value display _kind _source _score start end usage_key; do
-    [[ -n "$value" ]] || continue
-    candidates+=("$value")
-    displays+=("$display")
-    usage_keys+=("$usage_key")
-
-    if (( first )); then
-      replace_start=$start
-      replace_end=$end
-      prefix="${READLINE_LINE:start:end-start}"
-      first=0
-    fi
-  done < <("$ts" suggest "$READLINE_LINE" --cursor "$READLINE_POINT" --limit 500 2>/dev/null)
-
-  (("${#candidates[@]}" > 0)) || {
-    _termsense_reset_state
-    _termsense_restore_navigation
-    return 0
-  }
-
-  local selected=""
-  local selected_usage_key=""
-  local i
-
-  if command -v fzf >/dev/null 2>&1; then
-    local selected_row selected_index
-    selected_row="$(
-      for ((i=0; i<${#candidates[@]}; i++)); do
-        printf '%d\t%s\n' "$i" "${displays[i]}"
-      done | fzf         --height=40%         --reverse         --delimiter=$'\t'         --with-nth=2..         --prompt='TermSense > '         --query="$prefix"         --select-1         --exit-0
-    )"
-
-    selected_index="${selected_row%%$'\t'*}"
-    if [[ "$selected_index" =~ ^[0-9]+$ ]] && ((selected_index < ${#candidates[@]})); then
-      selected="${candidates[selected_index]}"
-      selected_usage_key="${usage_keys[selected_index]}"
-    fi
+  if _termsense_query 500; then
+    _termsense_draw_overlay
   else
-    printf '\n' >&2
-    local max=20
-    (("${#candidates[@]}" < max)) && max=${#candidates[@]}
-
-    for ((i=0; i<max; i++)); do
-      printf '%2d  %s\n' "$((i + 1))" "${displays[i]}" >&2
-    done
-    printf 'TermSense choice [1-%d, Enter to cancel]: ' "$max" >&2
-
-    local choice
-    IFS= read -r choice
-    if [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= max)); then
-      selected="${candidates[choice-1]}"
-      selected_usage_key="${usage_keys[choice-1]}"
-    fi
+    _termsense_dismiss
   fi
-
-  if [[ -n "$selected" ]]; then
-    local left="${READLINE_LINE:0:replace_start}"
-    local right="${READLINE_LINE:replace_end}"
-    READLINE_LINE="${left}${selected}${right}"
-    READLINE_POINT=$((replace_start + ${#selected}))
-    _termsense_record_usage "$selected_usage_key"
-  fi
-
-  _termsense_reset_state
-  _termsense_restore_navigation
 }
 
 _termsense_prompt_cleanup() {
+  __TERMSENSE_PALETTE_ACTIVE=0
   _termsense_clear_overlay
   _termsense_reset_state
   _termsense_restore_navigation
@@ -406,6 +378,13 @@ _termsense_prompt_cleanup() {
 }
 
 _termsense_refresh_shell_context
+
+__TERMSENSE_BIND_UP="$(_termsense_capture_binding '\e[A')"
+__TERMSENSE_BIND_DOWN="$(_termsense_capture_binding '\e[B')"
+__TERMSENSE_BIND_RIGHT="$(_termsense_capture_binding '\e[C')"
+__TERMSENSE_BIND_LEFT="$(_termsense_capture_binding '\e[D')"
+__TERMSENSE_BIND_TAB="$(_termsense_capture_binding '\C-i')"
+__TERMSENSE_BIND_ESC="$(_termsense_capture_binding '\e')"
 
 bind -x '"\C-x\C-t":_termsense_refresh'
 
