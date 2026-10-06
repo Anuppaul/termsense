@@ -1,0 +1,32 @@
+name: Documentation
+description: Report missing, incorrect, or unclear documentation
+title: "[Docs] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is unclear or missing?
+      description: Point to the page/section and explain the documentation problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should the documentation explain?
+      description: Describe the expected clarification, example, or correction.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Relevant TermSense version
+      placeholder: "0.1.0 or main"
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be willing to submit a documentation pull request.
