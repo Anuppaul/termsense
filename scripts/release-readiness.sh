@@ -116,56 +116,30 @@ grep -Fq 'diff <(git checkout' "$tmp/suggest-process-sub.txt" \
 grep -Fq '( git checkout' "$tmp/suggest-group.txt" \
   || fail "command group smoke failed"
 
+./target/release/termsense suggest "termsense st" --limit 20 > "$tmp/suggest-self.txt"
+grep -Fq "termsense status" "$tmp/suggest-self.txt" \
+  || fail "TermSense self-completion smoke failed"
+
 heredoc_buffer="$(printf 'cat <<EOF\nhello wor')"
 ./target/release/termsense suggest "$heredoc_buffer" --limit 20 > "$tmp/suggest-heredoc.txt"
 [[ ! -s "$tmp/suggest-heredoc.txt" ]] || fail "heredoc body should suppress suggestions"
 
 printf '==> install/uninstall lifecycle\n'
 mkdir -p "$tmp/home"
+install_prefix="$tmp/prefix with space"
+
 HOME="$tmp/home" \
 XDG_CONFIG_HOME="$tmp/home/.config" \
 XDG_CACHE_HOME="$tmp/home/.cache" \
 XDG_STATE_HOME="$tmp/home/.local/state" \
 TERMSENSE_SKIP_BUILD=1 \
 bash scripts/install.sh \
-  --prefix "$tmp/prefix" \
+  --prefix "$install_prefix" \
   --bashrc "$tmp/bashrc" >/dev/null
 
-[[ -x "$tmp/prefix/bin/termsense" ]] || fail "installer did not install binary"
+[[ -x "$install_prefix/bin/termsense" ]] || fail "installer did not install binary"
 [[ -f "$tmp/home/.config/termsense/config.conf" ]] || fail "installer did not create config"
-grep -q '^# >>> termsense >>>
-XDG_CONFIG_HOME="$tmp/home/.config" \
-XDG_CACHE_HOME="$tmp/home/.cache" \
-XDG_STATE_HOME="$tmp/home/.local/state" \
-bash scripts/uninstall.sh \
-  --prefix "$tmp/prefix" \
-  --bashrc "$tmp/bashrc" \
-  --purge >/dev/null
-
-[[ ! -e "$tmp/prefix/bin/termsense" ]] || fail "uninstaller did not remove binary"
-! grep -q '^# >>> termsense >>>$' "$tmp/bashrc" || fail "uninstaller left managed Bash block"
-[[ ! -d "$tmp/home/.config/termsense" ]] || fail "purge left config directory"
-
-printf '==> Debian package\n'
-TERMSENSE_SKIP_BUILD=1 bash scripts/package-deb.sh --output "$tmp/dist" >/dev/null
-
-deb_file="$(find "$tmp/dist" -maxdepth 1 -type f -name "termsense_${version}_*.deb" -print -quit)"
-[[ -n "$deb_file" ]] || fail "Debian package was not created"
-
-[[ "$(dpkg-deb -f "$deb_file" Package)" == "termsense" ]] \
-  || fail "Debian package name mismatch"
-[[ "$(dpkg-deb -f "$deb_file" Version)" == "$version" ]] \
-  || fail "Debian package version mismatch"
-dpkg-deb -c "$deb_file" | grep -q './usr/share/termsense/default.conf' \
-  || fail "Debian package is missing reference default config"
-dpkg-deb -c "$deb_file" | grep -q './usr/share/doc/termsense/CHANGELOG.md' \
-  || fail "Debian package is missing changelog"
-
-printf 'TermSense release readiness: PASS\n'
-printf 'version: %s\n' "$version"
-printf 'binary: %s\n' "$repo_root/target/release/termsense"
-printf 'deb: %s\n' "$deb_file"
- "$tmp/bashrc" || fail "installer did not add managed Bash block"
+grep -q '^# >>> termsense >>>$' "$tmp/bashrc" || fail "installer did not add managed Bash block"
 grep -q '^TERMSENSE_BIN=' "$tmp/bashrc" || fail "installer did not pin installed binary"
 
 installed_lookup="$(
@@ -174,7 +148,7 @@ installed_lookup="$(
   PATH="/usr/bin:/bin" \
   bash --noprofile --norc -ic "source '$tmp/bashrc'; _termsense_binary" 2>/dev/null
 )"
-[[ "$installed_lookup" == "$tmp/prefix/bin/termsense" ]] \
+[[ "$installed_lookup" == "$install_prefix/bin/termsense" ]] \
   || fail "user-local binary lookup fails when prefix/bin is outside PATH"
 
 HOME="$tmp/home" \
@@ -182,11 +156,11 @@ XDG_CONFIG_HOME="$tmp/home/.config" \
 XDG_CACHE_HOME="$tmp/home/.cache" \
 XDG_STATE_HOME="$tmp/home/.local/state" \
 bash scripts/uninstall.sh \
-  --prefix "$tmp/prefix" \
+  --prefix "$install_prefix" \
   --bashrc "$tmp/bashrc" \
   --purge >/dev/null
 
-[[ ! -e "$tmp/prefix/bin/termsense" ]] || fail "uninstaller did not remove binary"
+[[ ! -e "$install_prefix/bin/termsense" ]] || fail "uninstaller did not remove binary"
 ! grep -q '^# >>> termsense >>>$' "$tmp/bashrc" || fail "uninstaller left managed Bash block"
 [[ ! -d "$tmp/home/.config/termsense" ]] || fail "purge left config directory"
 
@@ -200,6 +174,8 @@ deb_file="$(find "$tmp/dist" -maxdepth 1 -type f -name "termsense_${version}_*.d
   || fail "Debian package name mismatch"
 [[ "$(dpkg-deb -f "$deb_file" Version)" == "$version" ]] \
   || fail "Debian package version mismatch"
+dpkg-deb -f "$deb_file" Depends | grep -q 'bash (>= 5.0)' \
+  || fail "Debian package Bash dependency mismatch"
 dpkg-deb -c "$deb_file" | grep -q './usr/share/termsense/default.conf' \
   || fail "Debian package is missing reference default config"
 dpkg-deb -c "$deb_file" | grep -q './usr/share/doc/termsense/CHANGELOG.md' \
