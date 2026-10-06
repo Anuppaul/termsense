@@ -28,7 +28,13 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - Right Arrow accepts the ghost candidate;
 - Esc dismisses the live menu;
 - **Ctrl+Space** opens the larger command browser;
-- optional `fzf` browser with a dependency-free numbered fallback.
+- optional `fzf` browser with a dependency-free numbered fallback;
+- Git subcommand suggestions such as `git che` → `checkout` / `check-ignore`;
+- current-repository Git ref suggestions for commands such as `git checkout`;
+- systemctl subcommand suggestions and local systemd unit discovery;
+- Docker subcommand suggestions and actual local container-name discovery;
+- real filesystem directory completion for `cd`, including `~/...` paths;
+- bounded local subprocesses for Git/Docker providers so provider failures do not hang the shell.
 
 The complete product contract is in [docs/CONCEPT.md](docs/CONCEPT.md).
 
@@ -193,6 +199,28 @@ TermSense:
 - does not run arbitrary discovered binaries during PATH indexing;
 - only inserts text into Readline; Bash still executes the final line after the user presses Enter.
 
+## Genericity invariant
+
+TermSense never ships personal project names, repository names, container names, service names, or user-specific paths as built-in suggestions.
+
+Dynamic suggestions come only from the machine and context where TermSense is running:
+
+```text
+git checkout fe
+             feature/...     # only if that ref exists in the current repository
+
+systemctl restart ng
+                  nginx.service   # only if that unit exists locally
+
+docker logs re
+            redis-cache      # only if that container exists in the local Docker daemon
+
+cd ~/Doc
+      ~/Documents/           # only if that directory exists
+```
+
+Static schemas contain only generic CLI vocabulary such as Git, systemctl, and Docker subcommands.
+
 ## Current Bash renderer boundary
 
 The first automatic renderer hooks ASCII printable keystrokes through Readline macros so it can refresh after normal insertion. Bracketed paste remains handled by Readline as a single paste operation. Non-ASCII input remains native Bash input and can still use explicit Ctrl+Space discovery.
@@ -201,14 +229,13 @@ This renderer is intentionally an initial vertical slice. Context-aware argument
 
 ## Next
 
-The next provider slice adds context beyond the first command token:
+The next provider work extends the same generic context model with:
 
-- filesystem paths;
-- Git branches/refs;
-- systemd services;
-- Docker containers;
-- project tasks/scripts;
-- local history ranking.
+- project tasks/scripts from local project manifests;
+- broader filesystem argument completion;
+- local history ranking;
+- richer option/flag schemas;
+- short-lived provider caches for expensive dynamic sources.
 
 ## Local verification
 
