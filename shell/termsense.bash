@@ -192,10 +192,8 @@ _termsense_activate_navigation() {
   bind -x '"\e[D":_termsense_move_left' 2>/dev/null || true
   bind -x '"\C-i":_termsense_accept_selected' 2>/dev/null || true
   bind -x '"\e":_termsense_dismiss' 2>/dev/null || true
-  bind -x '"\C-x\C-y":_termsense_before_accept' 2>/dev/null || true
-  bind '"\C-x\C-z": accept-line' 2>/dev/null || true
-  bind '"\C-m": "\C-x\C-y\C-x\C-z"' 2>/dev/null || true
-  bind '"\C-j": "\C-x\C-y\C-x\C-z"' 2>/dev/null || true
+  bind -x '"\C-m":_termsense_accept_selected' 2>/dev/null || true
+  bind -x '"\C-j":_termsense_accept_selected' 2>/dev/null || true
 }
 
 _termsense_reset_state() {
