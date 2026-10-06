@@ -301,10 +301,27 @@ fn path_dirs() -> Vec<PathBuf> {
         return Vec::new();
     };
 
+    let cwd = env::current_dir().ok();
     let mut seen = HashSet::new();
+
     env::split_paths(&path)
+        .map(|dir| resolve_path_entry(dir, cwd.as_deref()))
         .filter(|dir| seen.insert(dir.clone()))
         .collect()
+}
+
+fn resolve_path_entry(dir: PathBuf, cwd: Option<&Path>) -> PathBuf {
+    if dir.as_os_str().is_empty() {
+        return cwd.map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    }
+
+    if dir.is_relative() {
+        if let Some(cwd) = cwd {
+            return cwd.join(dir);
+        }
+    }
+
+    dir
 }
 
 fn dir_stamps(dirs: &[PathBuf]) -> Vec<DirStamp> {
@@ -438,8 +455,23 @@ fn write_index_cache(path: &Path, index: &CommandIndex) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{byte_to_char_offset, discover_path_commands, shell_safe_display};
+    use super::{
+        byte_to_char_offset, discover_path_commands, resolve_path_entry, shell_safe_display,
+    };
     use std::{fs, os::unix::fs::PermissionsExt};
+
+    #[test]
+    fn relative_path_entries_are_resolved_against_cwd() {
+        let cwd = std::path::Path::new("/tmp/example");
+        assert_eq!(
+            resolve_path_entry(std::path::PathBuf::from("bin"), Some(cwd)),
+            cwd.join("bin")
+        );
+        assert_eq!(
+            resolve_path_entry(std::path::PathBuf::new(), Some(cwd)),
+            cwd
+        );
+    }
 
     #[test]
     fn path_discovery_only_keeps_executables() {
