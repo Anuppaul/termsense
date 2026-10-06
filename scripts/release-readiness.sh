@@ -63,6 +63,8 @@ printf '==> source integrity\n'
   || fail "Bash adapter must contain exactly one _termsense_ctrl_space function"
 [[ "$(grep -c '^_termsense_draw_overlay() {' shell/termsense.bash)" -eq 1 ]] \
   || fail "Bash adapter must contain exactly one _termsense_draw_overlay function"
+grep -Fq 'bind -x '"'"'"\C-m":_termsense_accept_selected'"'" shell/termsense.bash \
+  || fail "Enter must accept the selected suggestion while the menu is active"
 [[ "$(grep -c '^pub(crate) fn active_context' src/shell_parse.rs)" -eq 1 ]] \
   || fail "shell parser must contain exactly one active_context function"
 [[ "$(grep -c '^fn lex_range' src/shell_parse.rs)" -eq 1 ]] \
