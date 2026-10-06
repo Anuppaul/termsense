@@ -48,8 +48,9 @@ enum Command {
     /// Refresh the local command index immediately.
     Index,
     /// Record an accepted TermSense suggestion for local ranking.
+    #[command(hide = true)]
     Record {
-        /// Complete command line shown to the user.
+        /// Privacy-safe derived usage key.
         value: String,
     },
     /// Print shell integration code.
@@ -141,14 +142,15 @@ fn run(cli: Cli) -> Result<(), String> {
             } else {
                 for candidate in candidates {
                     println!(
-                        "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                         candidate.insert_text,
                         candidate.display_text,
                         candidate.kind,
                         candidate.source,
                         candidate.score,
                         candidate.replacement_start,
-                        candidate.replacement_end
+                        candidate.replacement_end,
+                        candidate.usage_key
                     );
                 }
             }
