@@ -8,9 +8,49 @@ if [[ -n "${__TERMSENSE_BASH_LOADED:-}" ]]; then
 fi
 __TERMSENSE_BASH_LOADED=1
 
+_termsense_load_config() {
+  local config_file="${TERMSENSE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/termsense/config.conf}"
+  [[ -r "$config_file" ]] || return 0
+
+  local key value
+  while IFS='=' read -r key value; do
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+
+    [[ -n "$key" && "$key" != \#* ]] || continue
+
+    case "$key" in
+      auto_suggest)
+        [[ -v TERMSENSE_AUTO_SUGGEST ]] || TERMSENSE_AUTO_SUGGEST="$value"
+        ;;
+      max_visible)
+        [[ -v TERMSENSE_MAX_VISIBLE ]] || TERMSENSE_MAX_VISIBLE="$value"
+        ;;
+      ghost)
+        [[ -v TERMSENSE_GHOST ]] || TERMSENSE_GHOST="$value"
+        ;;
+      ctrl_space)
+        [[ -v TERMSENSE_CTRL_SPACE ]] || TERMSENSE_CTRL_SPACE="$value"
+        ;;
+    esac
+  done < "$config_file"
+}
+
+_termsense_load_config
+
 : "${TERMSENSE_AUTO_SUGGEST:=1}"
 : "${TERMSENSE_MAX_VISIBLE:=5}"
 : "${TERMSENSE_GHOST:=1}"
+: "${TERMSENSE_CTRL_SPACE:=1}"
+
+[[ "$TERMSENSE_AUTO_SUGGEST" =~ ^[01]$ ]] || TERMSENSE_AUTO_SUGGEST=1
+[[ "$TERMSENSE_GHOST" =~ ^[01]$ ]] || TERMSENSE_GHOST=1
+[[ "$TERMSENSE_CTRL_SPACE" =~ ^[01]$ ]] || TERMSENSE_CTRL_SPACE=1
+[[ "$TERMSENSE_MAX_VISIBLE" =~ ^[0-9]+$ ]] || TERMSENSE_MAX_VISIBLE=5
+(( TERMSENSE_MAX_VISIBLE >= 1 )) || TERMSENSE_MAX_VISIBLE=1
+(( TERMSENSE_MAX_VISIBLE <= 20 )) || TERMSENSE_MAX_VISIBLE=20
 
 __TERMSENSE_VISIBLE=0
 __TERMSENSE_GHOST_LEN=0
@@ -374,8 +414,10 @@ bind '"\C-x\C-b": backward-delete-char'
 bind '"\C-h": "\C-x\C-b\C-x\C-t"'
 bind '"\C-?": "\C-x\C-b\C-x\C-t"'
 
-bind -x '"\C- ":_termsense_ctrl_space'
-bind -x '"\C-@":_termsense_ctrl_space'
+if [[ "$TERMSENSE_CTRL_SPACE" != "0" ]]; then
+  bind -x '"\C- ":_termsense_ctrl_space'
+  bind -x '"\C-@":_termsense_ctrl_space'
+fi
 
 if declare -p PROMPT_COMMAND 2>/dev/null | grep -q '^declare -a'; then
   __termsense_prompt_found=0
