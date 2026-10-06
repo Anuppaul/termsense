@@ -148,7 +148,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     println!(
                         "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                         candidate.insert_text,
-                        candidate.display_text,
+                        shell_safe_display(&candidate.display_text),
                         candidate.kind,
                         candidate.source,
                         candidate.score,
@@ -270,6 +270,22 @@ fn doctor() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn shell_safe_display(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+
+    for ch in value.chars() {
+        match ch {
+            '\n' => output.push_str(" ↵ "),
+            '\t' => output.push_str(" ⇥ "),
+            '\r' => output.push(' '),
+            ch if ch.is_control() => output.push('�'),
+            ch => output.push(ch),
+        }
+    }
+
+    output
 }
 
 fn command_available(index: &CommandIndex, name: &str) -> bool {
@@ -418,7 +434,7 @@ fn write_index_cache(path: &Path, index: &CommandIndex) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::discover_path_commands;
+    use super::{discover_path_commands, shell_safe_display};
     use std::{fs, os::unix::fs::PermissionsExt};
 
     #[test]
@@ -445,5 +461,13 @@ mod tests {
         assert!(!commands.iter().any(|entry| entry.name == "notes"));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn shell_display_is_single_line_and_strips_controls() {
+        assert_eq!(
+            shell_safe_display("one\ntwo\tthree\u{1b}"),
+            "one ↵ two ⇥ three�"
+        );
     }
 }
