@@ -276,10 +276,12 @@ The parser contract covers:
 - separator suppression inside quotes or when escaped;
 - common file redirections such as `>`, `>>`, `<`, `2>`, `2>>`, `&>` and `&>>`;
 - descriptor-duplication recognition so forms such as `2>&1` are not treated as file paths;
-- innermost active routing inside open `$(...)` and backtick command substitutions;
-- absolute replacement byte ranges across separators, redirections and substitutions.
+- innermost active routing inside open `$(...)`, backtick and process substitutions `<(...)` / `>(...)`;
+- active routing inside open parenthesized and brace command groups;
+- arithmetic `$((...))` exclusion from command routing;
+- absolute replacement byte ranges across separators, redirections, substitutions and groups.
 
-It deliberately does not claim to be a complete Bash parser. Heredoc bodies, process substitution, arithmetic expansion, grouping/subshell execution semantics and full shell AST semantics are separate future layers.
+It deliberately does not claim to be a complete Bash parser. Heredoc bodies, arithmetic semantics, closed-group execution semantics and full shell AST semantics are separate future layers.
 
 ### Shell adapters
 
@@ -364,7 +366,8 @@ Initial targets on a normal Linux workstation:
 - command index load: < 50 ms after warm filesystem cache;
 - no network on keystroke path;
 - no arbitrary `--help` process spawning on keystroke path;
-- expensive providers must be cached or backgrounded.
+- expensive providers must be cached or backgrounded;
+- sensitive dynamic-provider caches should prefer session-scoped `$XDG_RUNTIME_DIR` storage with short TTLs rather than persistent state.
 
 The renderer should debounce expensive context refreshes while keeping prefix filtering immediate.
 
@@ -449,6 +452,8 @@ Installation layers are separated deliberately:
 
 Initial Debian package targets are amd64 and arm64. Package builds remain local while CI is intentionally disabled.
 
+A local release-readiness gate must validate formatting, tests, release build, Bash syntax, binary behavior, package identity and Debian package metadata without creating or invoking a CI workflow.
+
 ### Later
 
 - Zsh adapter;
@@ -480,6 +485,8 @@ A new Linux user can install TermSense, enable it for Bash, open a terminal and 
 7. receive correct suggestions after pipelines and command separators without altering the left-hand command;
 8. install or uninstall natively without Docker or a background daemon;
 9. receive filesystem suggestions for redirection targets without mistaking descriptor duplication for paths;
-10. receive suggestions inside nested command substitutions without rewriting the outer command.
+10. receive suggestions inside nested command substitutions without rewriting the outer command;
+11. receive suggestions inside process substitutions and open command groups;
+12. pass a complete local release-readiness gate without requiring CI.
 
 That interaction is the product contract. All implementation decisions should protect it.
