@@ -18,6 +18,12 @@ If you want a small place to start, check the open starter issues. For larger ch
 
 **Start here:** [CONTRIBUTING.md](CONTRIBUTING.md) · [Open issues](https://github.com/Anuppaul/termsense/issues) · [Latest release](https://github.com/Anuppaul/termsense/releases/latest)
 
+Starter work:
+
+- [Good first issue: add a dedicated rsync option schema](https://github.com/Anuppaul/termsense/issues/1)
+- [Good first issue: add shell redirection regression coverage](https://github.com/Anuppaul/termsense/issues/2)
+- [Help wanted: design a scoped Zsh adapter](https://github.com/Anuppaul/termsense/issues/3)
+
 ## Implemented now
 
 - Linux-only Rust CLI;
