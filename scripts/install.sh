@@ -121,9 +121,51 @@ fi
 
 "$binary" index >/dev/null 2>&1 || true
 
-printf 'TermSense installed: %s\n' "$binary"
-printf 'TermSense config: %s\n' "$config_file"
-if (( enable_shell )); then
-  printf 'Bash integration managed in: %s\n' "$bashrc"
-  printf 'Start a new Bash shell or run: source %q\n' "$bashrc"
-fi
+_termsense_install_welcome() {
+  local version command_count
+  version="$("$binary" --version 2>/dev/null | awk '{print $2}')"
+  command_count="$("$binary" status 2>/dev/null | awk -F': ' '/^commands indexed:/ {print $2; exit}')"
+
+  local bold="" dim="" cyan="" green="" reset=""
+  if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+    bold=\033[1m'
+    dim=\033[2m'
+    cyan=\033[36m'
+    green=\033[32m'
+    reset=\033[0m'
+  fi
+
+  printf '\n'
+  printf '%s' "$cyan$bold"
+  cat <<'EOF'
+ _____                   _____
+|_   _|__ _ __ _ __ ___/ ___/  ___ _ __  ___  ___
+  | |/ _ \ '__| '_ ` _ \___ \ / _ \ '_ \/ __|/ _ \
+  | |  __/ |  | | | | | |__) |  __/ | | \__ \  __/
+  |_|\___|_|  |_| |_| |_|____/ \___|_| |_|___/\___|
+EOF
+  printf '%s' "$reset"
+  printf '\n'
+  printf '  %sTerminal intelligence for Bash%s\n' "$bold" "$reset"
+  printf '  %s✓%s TermSense %s installed\n' "$green" "$reset" "${version:-0.1.0}"
+  if [[ -n "$command_count" ]]; then
+    printf '  %s✓%s %s commands indexed\n' "$green" "$reset" "$command_count"
+  fi
+  if (( enable_shell )); then
+    printf '  %s✓%s Bash integration enabled\n' "$green" "$reset"
+  fi
+  printf '\n'
+  printf '  %sStart typing%s      live suggestions\n' "$bold" "$reset"
+  printf '  %sCtrl+Space%s        browse all commands\n' "$bold" "$reset"
+  printf '  %sTab / →%s           accept suggestion\n' "$bold" "$reset"
+  printf '\n'
+  if (( enable_shell )); then
+    printf '  %sOpen a new Bash shell or run:%s source %q\n' "$dim" "$reset" "$bashrc"
+  fi
+  printf '\n'
+}
+
+_termsense_install_welcome
+
+printf '%s\n' "Installed binary: $binary"
+printf '%s\n' "Config: $config_file"
