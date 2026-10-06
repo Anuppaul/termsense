@@ -159,6 +159,7 @@ fn run(cli: Cli) -> Result<(), String> {
             }
         }
         Command::Index => {
+            runtime_cache::clear();
             let index = load_or_refresh_index(true)?;
             println!("indexed {} commands", index.commands.len());
             if let Some(path) = cache_path() {
