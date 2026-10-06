@@ -1,6 +1,6 @@
 use crate::{
     apt_cache,
-    shell_parse::{quote_candidate, tokens_before_cursor, QuoteStyle, Token},
+    shell_parse::{quote_candidate, tokens_before_cursor, Token},
     usage::UsageState,
     CommandEntry,
 };
@@ -235,17 +235,15 @@ pub(crate) fn suggest(
         return Vec::new();
     }
 
-    if tokens.first().is_some_and(|token| token.text == "sudo") {
-        if add_sudo_value_candidates(&mut Vec::new(), &tokens) {
-            let mut candidates = Vec::new();
-            add_sudo_value_candidates(&mut candidates, &tokens);
-            return finalize(candidates, usage, limit, buffer, cursor);
-        }
+    let mut candidates = Vec::new();
+    if tokens.first().is_some_and(|token| token.text == "sudo")
+        && add_sudo_value_candidates(&mut candidates, &tokens)
+    {
+        return finalize(candidates, usage, limit, buffer, cursor);
     }
 
     let effective_start = sudo_nested_command_index(&tokens).unwrap_or(0);
     let effective = &tokens[effective_start..];
-    let mut candidates = Vec::new();
 
     if effective.is_empty() || effective.len() <= 1 {
         let current = effective.last().or_else(|| tokens.last()).expect("token");
@@ -354,7 +352,7 @@ fn add_shell_names(
 }
 
 fn sudo_nested_command_index(tokens: &[Token]) -> Option<usize> {
-    if tokens.first().is_none_or(|token| token.text != "sudo") {
+    if !tokens.first().is_some_and(|token| token.text == "sudo") {
         return Some(0);
     }
 
