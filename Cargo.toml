@@ -2,6 +2,7 @@
 name = "termsense"
 version = "0.1.0"
 edition = "2021"
+authors = ["Anuppaul"]
 description = "Context-aware inline command suggestions for Linux terminals"
 license = "MIT"
 repository = "https://github.com/Anuppaul/termsense"
