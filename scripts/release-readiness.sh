@@ -120,6 +120,9 @@ grep -q '^config file: ' "$tmp/status.txt" || fail "config status smoke failed"
 ./target/release/termsense suggest "sudo git che" --limit 20 > "$tmp/suggest-context.txt"
 grep -Fq "sudo git checkout" "$tmp/suggest-context.txt" \
   || fail "sudo git contextual completion smoke failed"
+awk -F '\t' '$2 == "sudo git checkout" && $9 == "Switch branches or restore files" { found = 1 } END { exit !found }' \
+  "$tmp/suggest-context.txt" \
+  || fail "suggestion description protocol smoke failed"
 
 ./target/release/termsense suggest "git status && docker lo" --limit 20 > "$tmp/suggest-segment.txt"
 grep -Fq "git status && docker logs" "$tmp/suggest-segment.txt" \
