@@ -158,8 +158,11 @@ The engine uses layered providers.
 ### Tier 1 — structured local context
 
 - Git repositories, branches and refs;
-- systemd units;
+- systemd units and journal unit arguments;
 - running/stopped containers when Docker/compatible tools are present;
+- filesystem entries for path-taking commands;
+- SSH aliases from local SSH configuration and unhashed known-host entries;
+- local APT package metadata with bounded cached discovery;
 - project markers such as `Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `Makefile`;
 - shell completion metadata where safely parseable.
 
@@ -352,7 +355,10 @@ The renderer should debounce expensive context refreshes while keeping prefix fi
 - base PATH indexing reads metadata only;
 - provider subprocesses, when later added, use explicit allowlisted adapters and timeouts;
 - secrets typed on command lines must never be persisted as suggestion training data by default;
-- sensitive command patterns should be eligible for history exclusion.
+- sensitive command patterns should be eligible for history exclusion;
+- adaptive ranking persists generic derived keys only;
+- dynamic identifiers such as SSH hosts, filesystem paths, Git refs, container names, systemd units and project-specific resources must not be persisted into adaptive ranking state by default;
+- APT package discovery is local-only and may be cached, but must not initiate a package-index network refresh.
 
 ## 12. MVP roadmap
 
@@ -383,8 +389,10 @@ The renderer should debounce expensive context refreshes while keeping prefix fi
 - filesystem/path completion;
 - shell aliases/functions;
 - Git refs;
-- systemd units;
+- systemd units and journal arguments;
 - Docker containers;
+- SSH hosts from local configuration;
+- APT package names from local package metadata;
 - project command providers.
 
 ### Slice 4 — enrichment and packaging
