@@ -603,10 +603,7 @@ fn inside_open_arithmetic(buffer: &str, cursor: usize) -> bool {
             continue;
         }
 
-        if depth > 0
-            && index + 1 < bytes.len()
-            && bytes[index] == b')'
-            && bytes[index + 1] == b')'
+        if depth > 0 && index + 1 < bytes.len() && bytes[index] == b')' && bytes[index + 1] == b')'
         {
             depth = depth.saturating_sub(1);
             index += 2;
@@ -805,8 +802,7 @@ fn escape_unquoted(value: &str) -> String {
             || ch == char::from(96u8)
             || matches!(
                 ch,
-                '\\'
-                    | '\''
+                '\\' | '\''
                     | '"'
                     | '$'
                     | '!'
