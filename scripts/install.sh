@@ -102,12 +102,14 @@ if (( enable_shell )); then
     managed == 0 { print }
   ' "$bashrc" > "$temp"
 
+  printf -v binary_q '%q' "$binary"
+
   cat >> "$temp" <<EOF
 
 # >>> termsense >>>
-if [[ -x "$binary" ]]; then
-  TERMSENSE_BIN="$binary"
-  eval "\$("$binary" init bash)"
+TERMSENSE_BIN=$binary_q
+if [[ -x "\$TERMSENSE_BIN" ]]; then
+  eval "\$("\$TERMSENSE_BIN" init bash)"
 fi
 # <<< termsense <<<
 EOF
