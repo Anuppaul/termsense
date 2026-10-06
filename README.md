@@ -4,7 +4,7 @@
 
 TermSense is a Linux-only terminal intelligence package. It discovers commands available on the current machine and adds IDE-style discovery to an interactive shell without replacing Bash or executing suggestions automatically.
 
-> Status: v0.1 implementation nearing scope freeze; local compile/runtime verification is the final gate before release.
+> Status: **v0.1 implementation complete.** Local compile/runtime/release-readiness verification is the remaining gate before release.
 
 ## Implemented now
 
