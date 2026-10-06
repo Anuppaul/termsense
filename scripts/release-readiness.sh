@@ -66,6 +66,12 @@ cargo test
 printf '==> release build\n'
 cargo build --release
 
+[[ -s Cargo.lock ]] || fail "Cargo.lock was not generated"
+git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 \
+  || fail "Cargo.lock exists but is not committed; commit the generated lockfile before release"
+git diff --quiet -- Cargo.lock \
+  || fail "Cargo.lock changed during build; commit the updated lockfile before release"
+
 printf '==> shell syntax\n'
 bash -n shell/termsense.bash
 bash -n scripts/check-local.sh
