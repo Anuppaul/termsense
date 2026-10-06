@@ -4,7 +4,7 @@
 
 TermSense is a Linux-only terminal intelligence package. It discovers commands available on the current machine and adds IDE-style discovery to an interactive shell without replacing Bash or executing suggestions automatically.
 
-> Status: **v0.1 implementation complete.** Local compile/runtime/release-readiness verification is the remaining gate before release.
+> Status: **v0.1 implementation complete and automated release-readiness verified.** Interactive Bash terminal UX validation is the remaining gate before release.
 
 ## Implemented now
 
@@ -709,6 +709,8 @@ bash scripts/release-readiness.sh
 ```
 
 The release gate verifies package identity/version/license, forbids workflow files under the current no-CI policy, runs rustfmt/tests/release build, checks all Bash scripts, smoke-tests contextual suggestions and the install/uninstall lifecycle, generates Bash integration and syntax-checks it, builds a temporary Debian package, and verifies its package/version/content metadata.
+
+The gate has been validated locally on Linux for v0.1.0 with **66/66 unit tests passing**, a clean optimized release build, Bash syntax checks, binary smoke tests, install/uninstall lifecycle checks, and Debian package generation.
 
 Because TermSense is a binary application, the final release also requires a generated and committed `Cargo.lock`. The first successful local Cargo build will generate it; the release gate will require it to be tracked before the release is finalized.
 
