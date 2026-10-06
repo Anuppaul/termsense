@@ -346,7 +346,7 @@ fn active_segment_start_from(buffer: &str, base: usize, cursor: usize) -> usize 
             }
         }
 
-        if matches!(ch, ';' | '|' | '&') {
+        if matches!(ch, '\n' | ';' | '|' | '&') {
             let mut boundary = base + relative_offset + ch.len_utf8();
 
             if matches!(ch, '|' | '&') {
@@ -447,7 +447,6 @@ fn lex_range(buffer: &str, start: usize, cursor: usize) -> Vec<Lexeme> {
             match active_quote {
                 QuoteStyle::Single => {
                     if current == '\'' {
-                        active_quote = QuoteStyle::None;
                         end = absolute_offset;
                         break;
                     }
@@ -455,7 +454,6 @@ fn lex_range(buffer: &str, start: usize, cursor: usize) -> Vec<Lexeme> {
                 }
                 QuoteStyle::Double => {
                     if current == '"' {
-                        active_quote = QuoteStyle::None;
                         end = absolute_offset;
                         break;
                     }
@@ -899,6 +897,16 @@ mod tests {
 
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0].text, "dock");
+    }
+
+    #[test]
+    fn newline_starts_a_fresh_command_segment() {
+        let input = "echo done\ngit che";
+        let tokens = active_segment_tokens(input, input.len());
+
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].text, "git");
+        assert_eq!(tokens[1].text, "che");
     }
 
     #[test]
