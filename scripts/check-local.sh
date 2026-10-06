@@ -9,6 +9,11 @@ if [[ "$(uname -s)" != "Linux" ]]; then
   exit 1
 fi
 
+if (( BASH_VERSINFO[0] < 5 )); then
+  printf 'TermSense checks require Bash 5.0 or newer.\n' >&2
+  exit 1
+fi
+
 command -v cargo >/dev/null 2>&1 || {
   printf 'cargo is required for local verification.\n' >&2
   exit 1
