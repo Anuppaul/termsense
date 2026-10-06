@@ -228,7 +228,10 @@ mod tests {
 
     #[test]
     fn normalizes_man_option_tokens() {
-        assert_eq!(normalize_option("--output=FILE").as_deref(), Some("--output"));
+        assert_eq!(
+            normalize_option("--output=FILE").as_deref(),
+            Some("--output")
+        );
         assert_eq!(normalize_option("[-v,").as_deref(), Some("-v"));
     }
 

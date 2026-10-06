@@ -9,8 +9,7 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashSet},
-    env,
-    fs,
+    env, fs,
     io::Write,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
@@ -21,7 +20,11 @@ use std::{
 const INDEX_VERSION: u32 = 1;
 
 #[derive(Parser, Debug)]
-#[command(name = "termsense", version, about = "Context-aware terminal suggestions for Linux")]
+#[command(
+    name = "termsense",
+    version,
+    about = "Context-aware terminal suggestions for Linux"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -222,7 +225,10 @@ fn doctor() -> Result<(), String> {
     if index.commands.is_empty() {
         return Err("command discovery returned 0 commands".into());
     }
-    println!("  command discovery: ok ({} commands)", index.commands.len());
+    println!(
+        "  command discovery: ok ({} commands)",
+        index.commands.len()
+    );
 
     if let Some(path) = cache_path() {
         println!("  command cache: {}", path.display());
@@ -312,7 +318,9 @@ fn path_dirs() -> Vec<PathBuf> {
 
 fn resolve_path_entry(dir: PathBuf, cwd: Option<&Path>) -> PathBuf {
     if dir.as_os_str().is_empty() {
-        return cwd.map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+        return cwd
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
     }
 
     if dir.is_relative() {
@@ -443,8 +451,7 @@ fn write_index_cache(path: &Path, index: &CommandIndex) -> Result<(), String> {
     let bytes =
         serde_json::to_vec(index).map_err(|err| format!("serialize command index: {err}"))?;
 
-    let mut file =
-        fs::File::create(&temp).map_err(|err| format!("create command cache: {err}"))?;
+    let mut file = fs::File::create(&temp).map_err(|err| format!("create command cache: {err}"))?;
     file.write_all(&bytes)
         .map_err(|err| format!("write command cache: {err}"))?;
     file.sync_all()
