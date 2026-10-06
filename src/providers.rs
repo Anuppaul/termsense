@@ -467,8 +467,19 @@ fn add_sudo_value_candidates(out: &mut Vec<Candidate>, tokens: &[Token]) -> bool
 fn sudo_option_takes_value(value: &str) -> bool {
     matches!(
         value,
-        "-u" | "--user" | "-U" | "-g" | "--group" | "-h" | "--host" | "-C"
-            | "--close-from" | "-T" | "--command-timeout" | "-D" | "--chdir" | "-p"
+        "-u" | "--user"
+            | "-U"
+            | "-g"
+            | "--group"
+            | "-h"
+            | "--host"
+            | "-C"
+            | "--close-from"
+            | "-T"
+            | "--command-timeout"
+            | "-D"
+            | "--chdir"
+            | "-p"
             | "--prompt"
     ) || value.starts_with("--user=")
         || value.starts_with("--group=")
@@ -557,7 +568,14 @@ fn add_values(
 
 fn add_git_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
     if tokens.len() == 2 {
-        add_static(out, GIT_SUBCOMMANDS, current, "subcommand", "git-schema", 500);
+        add_static(
+            out,
+            GIT_SUBCOMMANDS,
+            current,
+            "subcommand",
+            "git-schema",
+            500,
+        );
         return;
     }
 
@@ -1015,7 +1033,10 @@ fn add_curl_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Tok
             add_filesystem_candidates(out, current, false);
             return;
         }
-        if matches!(previous, "-H" | "--header" | "-d" | "--data" | "--data-raw" | "-X" | "--request") {
+        if matches!(
+            previous,
+            "-H" | "--header" | "-d" | "--data" | "--data-raw" | "-X" | "--request"
+        ) {
             return;
         }
     }
@@ -1040,7 +1061,14 @@ fn add_termsense_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current:
 
     match tokens[1].text.as_str() {
         "init" if tokens.len() == 3 => {
-            add_static(out, &["bash"], current, "argument-value", "termsense-schema", 800);
+            add_static(
+                out,
+                &["bash"],
+                current,
+                "argument-value",
+                "termsense-schema",
+                800,
+            );
         }
         "suggest" if current.text.starts_with('-') => {
             add_static(
@@ -1080,11 +1108,7 @@ fn add_command_lookup_candidates(
     add_command_candidates(out, commands, current);
 }
 
-fn add_path_assignment_candidates(
-    out: &mut Vec<Candidate>,
-    current: &Token,
-    option: &str,
-) {
+fn add_path_assignment_candidates(out: &mut Vec<Candidate>, current: &Token, option: &str) {
     let Some(prefix) = current.text.strip_prefix(option) else {
         return;
     };
@@ -1176,10 +1200,7 @@ fn make_targets() -> Vec<String> {
             continue;
         };
 
-        if left.contains('=')
-            || left.contains('%')
-            || left.contains(char::from(36u8))
-        {
+        if left.contains('=') || left.contains('%') || left.contains(char::from(36u8)) {
             continue;
         }
 
@@ -1506,7 +1527,11 @@ fn git_refs() -> Vec<String> {
     };
 
     let mut refs = BTreeSet::new();
-    for line in output.lines().map(str::trim).filter(|line| !line.is_empty()) {
+    for line in output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
         if !line.ends_with("/HEAD") {
             refs.insert(line.to_owned());
         }
@@ -1518,8 +1543,7 @@ fn git_refs() -> Vec<String> {
 }
 
 fn docker_container_names() -> Vec<String> {
-    if let Some(cached) =
-        runtime_cache::load_lines("docker-containers-v1", Duration::from_secs(2))
+    if let Some(cached) = runtime_cache::load_lines("docker-containers-v1", Duration::from_secs(2))
     {
         return cached;
     }
@@ -1530,7 +1554,11 @@ fn docker_container_names() -> Vec<String> {
     };
 
     let mut names = BTreeSet::new();
-    for name in output.lines().map(str::trim).filter(|line| !line.is_empty()) {
+    for name in output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
         names.insert(name.to_owned());
     }
 
@@ -1540,9 +1568,7 @@ fn docker_container_names() -> Vec<String> {
 }
 
 fn systemd_units() -> Vec<String> {
-    if let Some(cached) =
-        runtime_cache::load_lines("systemd-units-v1", Duration::from_secs(10))
-    {
+    if let Some(cached) = runtime_cache::load_lines("systemd-units-v1", Duration::from_secs(10)) {
         return cached;
     }
 
@@ -1813,8 +1839,12 @@ mod tests {
     #[test]
     fn git_subcommands_are_contextual() {
         let candidates = super::suggest(&[], &UsageState::default(), "git che", 7, 20);
-        assert!(candidates.iter().any(|candidate| candidate.insert_text == "checkout"));
-        assert!(!candidates.iter().any(|candidate| candidate.insert_text == "status"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.insert_text == "checkout"));
+        assert!(!candidates
+            .iter()
+            .any(|candidate| candidate.insert_text == "status"));
     }
 
     #[test]
@@ -1841,38 +1871,47 @@ mod tests {
     #[test]
     fn cargo_subcommands_are_generic() {
         let candidates = super::suggest(&[], &UsageState::default(), "cargo bu", 8, 20);
-        assert!(candidates.iter().any(|candidate| candidate.display_text == "cargo build"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "cargo build"));
     }
 
     #[test]
     fn git_commit_flags_are_contextual() {
         let candidates = super::suggest(&[], &UsageState::default(), "git commit --a", 14, 20);
-        assert!(candidates.iter().any(|candidate| candidate.display_text == "git commit --amend"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "git commit --amend"));
     }
 
     #[test]
     fn docker_logs_flags_are_contextual() {
         let candidates = super::suggest(&[], &UsageState::default(), "docker logs --f", 15, 20);
-        assert!(candidates.iter().any(|candidate| candidate.display_text == "docker logs --follow"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "docker logs --follow"));
     }
 
     #[test]
     fn apt_subcommands_are_contextual() {
         let candidates = super::suggest(&[], &UsageState::default(), "apt ins", 7, 20);
-        assert!(candidates.iter().any(|candidate| candidate.display_text == "apt install"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "apt install"));
     }
 
     #[test]
     fn find_options_are_contextual() {
         let candidates = super::suggest(&[], &UsageState::default(), "find ./ -na", 11, 20);
-        assert!(candidates.iter().any(|candidate| candidate.display_text == "find ./ -name"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "find ./ -name"));
     }
 
     #[test]
     fn find_type_values_are_contextual() {
         let input = "find ./ -type d";
-        let candidates =
-            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "find ./ -type d"));
@@ -1881,15 +1920,23 @@ mod tests {
     #[test]
     fn grep_options_are_contextual() {
         let candidates = super::suggest(&[], &UsageState::default(), "grep -r", 7, 20);
-        assert!(candidates.iter().any(|candidate| candidate.display_text == "grep -r"));
-        assert!(candidates.iter().any(|candidate| candidate.display_text == "grep -R"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "grep -r"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "grep -R"));
     }
 
     #[test]
     fn curl_options_are_contextual() {
         let candidates = super::suggest(&[], &UsageState::default(), "curl --hea", 10, 20);
-        assert!(candidates.iter().any(|candidate| candidate.display_text == "curl --head"));
-        assert!(candidates.iter().any(|candidate| candidate.display_text == "curl --header"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "curl --head"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "curl --header"));
     }
 
     #[test]
@@ -1912,15 +1959,20 @@ mod tests {
     #[test]
     fn dynamic_resource_candidates_are_not_persisted_for_ranking() {
         assert_eq!(super::usage_key_for("ssh-local", "ssh-host", "prod"), "");
-        assert_eq!(super::usage_key_for("filesystem", "file", "~/secret.txt"), "");
-        assert_eq!(super::usage_key_for("git-local", "git-ref", "feature/private"), "");
+        assert_eq!(
+            super::usage_key_for("filesystem", "file", "~/secret.txt"),
+            ""
+        );
+        assert_eq!(
+            super::usage_key_for("git-local", "git-ref", "feature/private"),
+            ""
+        );
         assert_eq!(super::usage_key_for("sudo-local", "user", "alice"), "");
     }
 
     #[test]
     fn nested_sudo_keeps_full_display_context() {
-        let candidates =
-            super::suggest(&[], &UsageState::default(), "sudo -H git che", 15, 20);
+        let candidates = super::suggest(&[], &UsageState::default(), "sudo -H git che", 15, 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "sudo -H git checkout"));
@@ -1932,8 +1984,7 @@ mod tests {
             name: "docker".to_owned(),
             path: std::path::PathBuf::from("/usr/bin/docker"),
         }];
-        let candidates =
-            super::suggest(&commands, &UsageState::default(), "which do", 8, 20);
+        let candidates = super::suggest(&commands, &UsageState::default(), "which do", 8, 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "which docker"));
@@ -1942,15 +1993,13 @@ mod tests {
     #[test]
     fn termsense_completes_its_own_cli() {
         let input = "termsense st";
-        let candidates =
-            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "termsense status"));
 
         let input = "termsense init b";
-        let candidates =
-            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "termsense init bash"));
@@ -1966,8 +2015,7 @@ mod tests {
     #[test]
     fn command_substitution_routes_to_inner_git() {
         let input = "echo $(git che";
-        let candidates =
-            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "echo $(git checkout"));
@@ -1976,8 +2024,7 @@ mod tests {
     #[test]
     fn backtick_substitution_routes_to_inner_git() {
         let input = "echo `git che";
-        let candidates =
-            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "echo `git checkout"));
@@ -1994,8 +2041,7 @@ mod tests {
     #[test]
     fn process_substitution_routes_to_inner_git_provider() {
         let input = "diff <(git che";
-        let candidates =
-            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "diff <(git checkout"));
@@ -2004,8 +2050,7 @@ mod tests {
     #[test]
     fn paren_group_routes_to_inner_git_provider() {
         let input = "( git che";
-        let candidates =
-            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "( git checkout"));
@@ -2014,8 +2059,7 @@ mod tests {
     #[test]
     fn brace_group_routes_to_inner_docker_provider() {
         let input = "{ docker lo";
-        let candidates =
-            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "{ docker logs"));
@@ -2028,8 +2072,7 @@ mod tests {
             path: std::path::PathBuf::from("/usr/bin/grep"),
         }];
         let input = "cat file | gre";
-        let candidates =
-            super::suggest(&commands, &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&commands, &UsageState::default(), input, input.len(), 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "cat file | grep"));
@@ -2038,8 +2081,7 @@ mod tests {
     #[test]
     fn separator_routes_to_right_hand_context() {
         let input = "git status && docker lo";
-        let candidates =
-            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "git status && docker logs"));
