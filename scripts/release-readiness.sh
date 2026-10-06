@@ -193,13 +193,13 @@ XDG_CONFIG_HOME="$tmp/home/.config" \
 XDG_CACHE_HOME="$tmp/home/.cache" \
 XDG_STATE_HOME="$tmp/home/.local/state" \
 TERMSENSE_SKIP_BUILD=1 \
-PATH="$tmp/prefix/bin:/usr/bin:/bin" \
+PATH="$tmp/prefix/bin/:/usr/bin:/bin" \
 bash scripts/install.sh \
   --prefix "$tmp/prefix" \
   --bashrc "$tmp/bashrc" > "$tmp/install-on-path.txt"
 
 ! grep -Fq "is not on your PATH yet." "$tmp/install-on-path.txt" \
-  || fail "installer warned even though prefix/bin is already on PATH"
+  || fail "installer warned even though prefix/bin with trailing slash is already on PATH"
 
 HOME="$tmp/home" \
 XDG_CONFIG_HOME="$tmp/home/.config" \

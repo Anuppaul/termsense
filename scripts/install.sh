@@ -82,12 +82,20 @@ binary="$bin_dir/termsense"
 mkdir -p "$bin_dir"
 install -m 0755 target/release/termsense "$binary"
 
+_termsense_canonical_dir() {
+  local dir="${1:-.}"
+  (cd -P -- "$dir" 2>/dev/null && pwd -P)
+}
+
 _termsense_path_contains() {
   local needle="$1"
-  local entry
-  IFS=: read -r -a _termsense_path_entries <<< "${PATH:-}"
-  for entry in "${_termsense_path_entries[@]}"; do
-    [[ "$entry" == "$needle" ]] && return 0
+  local canonical_needle entry canonical_entry
+  local -a path_entries
+  canonical_needle="$(_termsense_canonical_dir "$needle")" || return 1
+  IFS=: read -r -a path_entries <<< "${PATH:-}"
+  for entry in "${path_entries[@]}"; do
+    canonical_entry="$(_termsense_canonical_dir "$entry")" || continue
+    [[ "$canonical_entry" == "$canonical_needle" ]] && return 0
   done
   return 1
 }
