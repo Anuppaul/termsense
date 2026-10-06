@@ -688,6 +688,11 @@ const CURL_OPTIONS: &[&str] = &[
     "-v",
 ];
 
+const RSYNC_OPTIONS: &[&str] = &[
+    "--archive", "--compress", "--delete", "--dry-run", "--exclude=", "--partial", "--progress",
+    "--recursive", "--verbose", "-a", "-r", "-v", "-z",
+];
+
 const COMMAND_LOOKUP_OPTIONS: &[&str] = &["--all", "--help", "--version", "-a", "-v", "-V"];
 
 const TERMSENSE_SUBCOMMANDS: &[&str] = &[
@@ -784,6 +789,11 @@ pub(crate) fn suggest(
         "grep" | "egrep" | "fgrep" => add_grep_candidates(&mut candidates, effective, current),
         "tar" => add_tar_candidates(&mut candidates, effective, current),
         "curl" => add_curl_candidates(&mut candidates, effective, current),
+        "rsync" => {
+            if current.text.starts_with('-') {
+                add_static(&mut candidates, RSYNC_OPTIONS, current, "option", "rsync-schema", 650);
+            }
+        }
         "which" | "whereis" | "type" | "command" | "man" => {
             add_command_lookup_candidates(&mut candidates, commands, effective, current)
         }
@@ -2796,6 +2806,18 @@ fn candidate_description(source: &str, kind: &str, value: &str) -> &'static str 
             "--verbose" | "-v" => "Show detailed request, response, and connection diagnostics",
             _ => "curl behavior",
         },
+        "rsync-schema" => match value {
+            "--archive" | "-a" => "Preserve common metadata and recurse into directories",
+            "--compress" | "-z" => "Compress file data during transfer",
+            "--delete" => "Delete destination files that no longer exist at the source",
+            "--dry-run" => "Show the changes without transferring or deleting files",
+            "--exclude=" => "Skip files matching the specified pattern",
+            "--partial" => "Keep partially transferred files if a transfer is interrupted",
+            "--progress" => "Show transfer progress for each file",
+            "--recursive" | "-r" => "Recurse into directories",
+            "--verbose" | "-v" => "Increase the amount of transfer detail shown",
+            _ => "rsync behavior",
+        },
         "command-lookup-schema" => match value {
             "--all" | "-a" => "Show every matching executable found in PATH",
             "--help" => "Show help for the command lookup utility",
@@ -3176,6 +3198,19 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "curl --header"));
+    }
+
+    #[test]
+    fn rsync_options_are_contextual_and_descriptive() {
+        let candidates = super::suggest(&[], &UsageState::default(), "rsync --del", 11, 20);
+        let delete = candidates
+            .iter()
+            .find(|candidate| candidate.insert_text == "--delete")
+            .expect("rsync delete option");
+        assert_eq!(
+            delete.description,
+            "Delete destination files that no longer exist at the source"
+        );
     }
 
     #[test]
