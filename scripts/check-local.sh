@@ -22,6 +22,9 @@ cargo test
 
 printf '==> Bash syntax\n'
 bash -n shell/termsense.bash
+bash -n scripts/install.sh
+bash -n scripts/uninstall.sh
+[[ ! -f scripts/package-deb.sh ]] || bash -n scripts/package-deb.sh
 
 printf '==> Verify no GitHub Actions workflows are present\n'
 if [[ -d .github/workflows ]] && find .github/workflows -type f -print -quit | grep -q .; then
