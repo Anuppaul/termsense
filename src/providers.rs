@@ -1084,8 +1084,30 @@ fn push_match(
             score: score + boost,
             replacement_start,
             replacement_end,
-            usage_key: format!("{source}:{kind}:{insert_text}"),
+            usage_key: usage_key_for(source, kind, insert_text),
         });
+    }
+}
+
+fn usage_key_for(source: &str, kind: &str, insert_text: &str) -> String {
+    match source {
+        "path"
+        | "git-schema"
+        | "git-commit-schema"
+        | "git-checkout-schema"
+        | "git-switch-schema"
+        | "git-log-schema"
+        | "systemctl-schema"
+        | "docker-schema"
+        | "docker-logs-schema"
+        | "docker-ps-schema"
+        | "docker-exec-schema"
+        | "cargo-schema"
+        | "package-manager-schema"
+        | "apt-schema"
+        | "journalctl-schema"
+        | "ssh-schema" => format!("{source}:{kind}:{insert_text}"),
+        _ => String::new(),
     }
 }
 
@@ -1319,5 +1341,12 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "ssh -i"));
+    }
+
+    #[test]
+    fn dynamic_resource_candidates_are_not_persisted_for_ranking() {
+        assert_eq!(super::usage_key_for("ssh-local", "ssh-host", "prod"), "");
+        assert_eq!(super::usage_key_for("filesystem", "file", "~/secret.txt"), "");
+        assert_eq!(super::usage_key_for("git-local", "git-ref", "feature/private"), "");
     }
 }
