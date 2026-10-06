@@ -38,7 +38,9 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - full-command suggestion display while retaining token-safe replacement;
 - generic Cargo subcommand intelligence;
 - local `package.json` script discovery for pnpm/npm/yarn/bun;
-- local Makefile target discovery.
+- local Makefile target discovery;
+- contextual flag/option suggestions for common Git, Docker, systemctl and Cargo flows;
+- local accepted-suggestion ranking using privacy-safe derived keys rather than raw command history.
 
 The complete product contract is in [docs/CONCEPT.md](docs/CONCEPT.md).
 
@@ -67,6 +69,21 @@ $ sudo git che[ckout]
 ```
 
 Internally TermSense still replaces only the active token, so the existing `sudo git ` prefix is preserved safely.
+
+Option completion follows the same full-command display rule:
+
+```text
+$ git commit --a
+    > git commit --all
+      git commit --amend
+      git commit --author=
+
+$ docker logs --f
+    > docker logs --follow
+
+$ systemctl --u
+    > systemctl --user
+```
 
 Controls:
 
@@ -255,6 +272,45 @@ make bu
 
 TermSense reads these files; it does not execute project scripts merely to discover their names.
 
+## Local usage ranking
+
+TermSense can learn which suggestions you actually accept. It does **not** import or copy your raw Bash history.
+
+When a suggestion is accepted, the Bash adapter records a derived key such as:
+
+```text
+path:command:docker
+git-schema:subcommand:checkout
+docker-logs-schema:option:--follow
+```
+
+These keys are stored locally under:
+
+```text
+$XDG_STATE_HOME/termsense/usage-v1.json
+```
+
+or:
+
+```text
+~/.local/state/termsense/usage-v1.json
+```
+
+They do not contain the complete typed command line. Usage boosts are deliberately capped so an exact textual match still outranks a merely frequent prefix match.
+
+Example:
+
+```text
+$ d
+    > docker
+      date
+      df
+      diff
+      du
+```
+
+Only installed `d...` commands are candidates. If `docker` is repeatedly accepted, it can rise above other prefix matches without replacing exact-match semantics.
+
 ## Current Bash renderer boundary
 
 The first automatic renderer hooks ASCII printable keystrokes through Readline macros so it can refresh after normal insertion. Bracketed paste remains handled by Readline as a single paste operation. Non-ASCII input remains native Bash input and can still use explicit Ctrl+Space discovery.
@@ -266,10 +322,10 @@ This renderer is intentionally an initial vertical slice. Context-aware argument
 The next provider work extends the same generic context model with:
 
 - broader filesystem argument completion;
-- local history ranking;
-- richer option/flag schemas;
+- more option/flag schemas;
 - short-lived provider caches for expensive dynamic sources;
-- additional safe project manifests and task runners.
+- additional safe project manifests and task runners;
+- ranking decay/recency without storing raw shell history.
 
 ## Local verification
 
