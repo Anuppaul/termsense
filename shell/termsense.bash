@@ -26,6 +26,37 @@ _termsense_binary() {
   command -v termsense 2>/dev/null
 }
 
+_termsense_refresh_shell_context() {
+  local -a values=()
+  local -a filtered=()
+  local name
+
+  TERMSENSE_SHELL_BUILTINS=""
+  mapfile -t values < <(compgen -b 2>/dev/null)
+  if (("${#values[@]}" > 0)); then
+    printf -v TERMSENSE_SHELL_BUILTINS '%s\n' "${values[@]}"
+  fi
+  export TERMSENSE_SHELL_BUILTINS
+
+  TERMSENSE_SHELL_ALIASES=""
+  mapfile -t values < <(compgen -A alias 2>/dev/null)
+  if (("${#values[@]}" > 0)); then
+    printf -v TERMSENSE_SHELL_ALIASES '%s\n' "${values[@]}"
+  fi
+  export TERMSENSE_SHELL_ALIASES
+
+  TERMSENSE_SHELL_FUNCTIONS=""
+  filtered=()
+  mapfile -t values < <(compgen -A function 2>/dev/null)
+  for name in "${values[@]}"; do
+    [[ "$name" == _termsense_* ]] || filtered+=("$name")
+  done
+  if (("${#filtered[@]}" > 0)); then
+    printf -v TERMSENSE_SHELL_FUNCTIONS '%s\n' "${filtered[@]}"
+  fi
+  export TERMSENSE_SHELL_FUNCTIONS
+}
+
 _termsense_record_usage() {
   local usage_key="$1"
   [[ -n "$usage_key" ]] || return 0
@@ -326,7 +357,10 @@ _termsense_prompt_cleanup() {
   _termsense_clear_overlay
   _termsense_reset_state
   _termsense_restore_navigation
+  _termsense_refresh_shell_context
 }
+
+_termsense_refresh_shell_context
 
 bind -x '"\C-x\C-t":_termsense_refresh'
 
