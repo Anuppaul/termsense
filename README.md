@@ -4,11 +4,19 @@
 
 TermSense is a Linux-only terminal intelligence package. It discovers commands available on the current machine and adds IDE-style discovery to an interactive shell without replacing Bash or executing suggestions automatically.
 
-> Status: **v0.1.0 release-ready.** Automated release-readiness and interactive Bash UX validation passed.
+> Status: **v0.1.0 released.** Automated release-readiness and interactive Bash UX validation passed.
 
 <p align="center">
   <img src="assets/termsense-terminal.svg" alt="TermSense terminal suggestions with one-line command descriptions" width="100%">
 </p>
+
+## Contributions welcome
+
+TermSense is open to external contributors. Bug fixes, parser tests, Bash UX improvements, command schemas, exact one-line descriptions, packaging improvements, and carefully scoped new providers are all welcome.
+
+If you want a small place to start, check the open starter issues. For larger changes—especially new shell adapters, privacy/persistence changes, or network-dependent behavior—please open an issue before implementation.
+
+**Start here:** [CONTRIBUTING.md](CONTRIBUTING.md) · [Open issues](https://github.com/Anuppaul/termsense/issues) · [Latest release](https://github.com/Anuppaul/termsense/releases/latest)
 
 ## Implemented now
 
