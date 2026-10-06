@@ -149,7 +149,7 @@ fn run(cli: Cli) -> Result<(), String> {
             } else {
                 for candidate in candidates {
                     println!(
-                        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                         candidate.insert_text,
                         shell_safe_display(&candidate.display_text),
                         candidate.kind,
@@ -157,7 +157,8 @@ fn run(cli: Cli) -> Result<(), String> {
                         candidate.score,
                         byte_to_char_offset(&buffer, candidate.replacement_start),
                         byte_to_char_offset(&buffer, candidate.replacement_end),
-                        candidate.usage_key
+                        candidate.usage_key,
+                        shell_safe_display(&candidate.description)
                     );
                 }
             }
