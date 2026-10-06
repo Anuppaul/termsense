@@ -130,7 +130,7 @@ _termsense_clear_overlay() {
 
   printf '\033[s' >&2
   if (( old_ghost > 0 )); then
-    printf '\033[K' >&2
+    printf '%*s' "$old_ghost" '' >&2
   fi
 
   local i
@@ -180,8 +180,8 @@ _termsense_restore_navigation() {
   _termsense_restore_binding "$__TERMSENSE_BIND_ESC" '\e'
   _termsense_restore_binding "$__TERMSENSE_BIND_ENTER_CR" '\C-m'
   _termsense_restore_binding "$__TERMSENSE_BIND_ENTER_LF" '\C-j'
-  bind -r '\e[27;97~' 2>/dev/null || true
-  bind -r '\e[27;96~' 2>/dev/null || true
+  _termsense_restore_binding "$__TERMSENSE_BIND_INTERNAL_CLEAN" '\C-x\C-y'
+  _termsense_restore_binding "$__TERMSENSE_BIND_INTERNAL_ACCEPT" '\C-x\C-z'
 }
 
 _termsense_activate_navigation() {
@@ -191,10 +191,10 @@ _termsense_activate_navigation() {
   bind -x '"\e[D":_termsense_move_left' 2>/dev/null || true
   bind -x '"\C-i":_termsense_accept_selected' 2>/dev/null || true
   bind -x '"\e":_termsense_dismiss' 2>/dev/null || true
-  bind -x '"\e[27;97~":_termsense_before_accept' 2>/dev/null || true
-  bind '"\e[27;96~": accept-line' 2>/dev/null || true
-  bind '"\C-m": "\e[27;97~\e[27;96~"' 2>/dev/null || true
-  bind '"\C-j": "\e[27;97~\e[27;96~"' 2>/dev/null || true
+  bind -x '"\C-x\C-y":_termsense_before_accept' 2>/dev/null || true
+  bind '"\C-x\C-z": accept-line' 2>/dev/null || true
+  bind '"\C-m": "\C-x\C-y\C-x\C-z"' 2>/dev/null || true
+  bind '"\C-j": "\C-x\C-y\C-x\C-z"' 2>/dev/null || true
 }
 
 _termsense_reset_state() {
@@ -227,6 +227,7 @@ _termsense_query() {
   local value display _kind _source _score start end usage_key first=1
   while IFS=$'\t' read -r value display _kind _source _score start end usage_key; do
     [[ -n "$value" ]] || continue
+
     __TERMSENSE_CANDIDATES+=("$value")
     __TERMSENSE_DISPLAYS+=("$display")
     __TERMSENSE_USAGE_KEYS+=("$usage_key")
@@ -275,7 +276,7 @@ _termsense_draw_overlay() {
   printf '\033[s' >&2
   if [[ -n "$suffix" ]]; then
     printf '\033[2m%s\033[0m' "$suffix" >&2
-    __TERMSENSE_GHOST_LEN=1
+    __TERMSENSE_GHOST_LEN=${#suffix}
   fi
 
   local window_start=0
@@ -287,6 +288,7 @@ _termsense_draw_overlay() {
   for ((i=0; i<max; i++)); do
     index=$((window_start + i))
     (( index < total )) || break
+
     label="${__TERMSENSE_DISPLAYS[index]}"
     (("${#label}" > width)) && label="${label:0:width}"
 
@@ -419,19 +421,20 @@ __TERMSENSE_BIND_TAB="$(_termsense_capture_binding '\C-i')"
 __TERMSENSE_BIND_ESC="$(_termsense_capture_binding '\e')"
 __TERMSENSE_BIND_ENTER_CR="$(_termsense_capture_binding '\C-m')"
 __TERMSENSE_BIND_ENTER_LF="$(_termsense_capture_binding '\C-j')"
+__TERMSENSE_BIND_INTERNAL_CLEAN="$(_termsense_capture_binding '\C-x\C-y')"
+__TERMSENSE_BIND_INTERNAL_ACCEPT="$(_termsense_capture_binding '\C-x\C-z')"
 
-# Internal virtual key sequences are deliberately chosen outside normal terminal input.
-bind -x '"\e[27;99~":_termsense_refresh'
-bind '"\e[27;98~": backward-delete-char'
+bind -x '"\C-x\C-t":_termsense_refresh'
 
 for __termsense_code in $(seq 32 126); do
   printf -v __termsense_hex '%02x' "$__termsense_code"
-  bind "\"\\x${__termsense_hex}\": \"\\C-v\\x${__termsense_hex}\\e[27;99~\"" 2>/dev/null || true
+  bind "\"\\x${__termsense_hex}\": \"\\C-v\\x${__termsense_hex}\\C-x\\C-t\"" 2>/dev/null || true
 done
 unset __termsense_code __termsense_hex
 
-bind '"\C-h": "\e[27;98~\e[27;99~"'
-bind '"\C-?": "\e[27;98~\e[27;99~"'
+bind '"\C-x\C-b": backward-delete-char'
+bind '"\C-h": "\C-x\C-b\C-x\C-t"'
+bind '"\C-?": "\C-x\C-b\C-x\C-t"'
 
 if [[ "$TERMSENSE_CTRL_SPACE" != "0" ]]; then
   bind -x '"\C- ":_termsense_ctrl_space'
