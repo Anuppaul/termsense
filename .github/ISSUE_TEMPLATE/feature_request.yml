@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a focused improvement to TermSense
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        TermSense is local-first and suggestion-only. Please explain the terminal workflow you want to improve.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the current friction or missing capability.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed behavior
+      description: Show a concrete terminal example when possible.
+      placeholder: |
+        $ command pre
+            > proposed completion — useful one-line description
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Command intelligence
+        - Bash/Readline UX
+        - Shell parsing
+        - Dynamic provider
+        - Cache/ranking
+        - Packaging/install
+        - New shell adapter
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Project invariants
+      options:
+        - label: This can remain local-first and suggestion-only.
+          required: true
+        - label: This does not require hardcoding user-specific machine data.
+          required: true
