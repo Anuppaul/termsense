@@ -25,9 +25,7 @@ pub(crate) fn options(command: &str) -> Vec<String> {
         }
 
         let values = refresh_options(command);
-        if !values.is_empty() {
-            let _ = write_cache(&path, &values);
-        }
+        let _ = write_cache(&path, &values);
         return values;
     }
 
