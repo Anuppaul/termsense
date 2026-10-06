@@ -426,7 +426,7 @@ echo 'eval "$(termsense init bash)"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-The package builder auto-maps `x86_64 → amd64` and `aarch64/arm64 → arm64`. No GitHub Actions or remote build service is involved.
+The package builder auto-maps `x86_64 → amd64` and `aarch64/arm64 → arm64`. Tagged releases are also published automatically by the repository's tag-only GitHub Actions release workflow.
 
 ## Build locally
 
@@ -699,7 +699,7 @@ Post-v0.1 work is intentionally separated from the first release:
 
 ## Local verification
 
-No GitHub Actions workflow is used.
+Normal pushes and pull requests do not run CI. A single GitHub Actions workflow exists only for publishing tagged releases.
 
 Fast local checks:
 
@@ -713,15 +713,30 @@ Full release-readiness gate:
 bash scripts/release-readiness.sh
 ```
 
-The release gate verifies package identity/version/license, forbids workflow files under the current no-CI policy, runs rustfmt/tests/release build, checks all Bash scripts, smoke-tests contextual suggestions and the install/uninstall lifecycle, generates Bash integration and syntax-checks it, builds a temporary Debian package, and verifies its package/version/content metadata.
+The release gate verifies package identity/version/license, allows only the tag-only release workflow, runs rustfmt/tests/release build, checks all Bash scripts, smoke-tests contextual suggestions and the install/uninstall lifecycle, generates Bash integration and syntax-checks it, builds a temporary Debian package, and verifies its package/version/content metadata.
 
 The gate has been validated locally on Linux for v0.1.0 with **66/66 unit tests passing**, a clean optimized release build, Bash syntax checks, binary smoke tests, install/uninstall lifecycle checks, and Debian package generation.
 
 Because TermSense is a binary application, the final release also requires a generated and committed `Cargo.lock`. The first successful local Cargo build will generate it; the release gate will require it to be tracked before the release is finalized.
 
-## CI policy
+## Release automation
 
-There is intentionally no GitHub Actions workflow in the repository at this stage. Initial development verification is local only.
+Normal pushes and pull requests still use local verification only. The repository has one GitHub Actions workflow:
+
+```text
+.github/workflows/release.yml
+```
+
+It runs only when a version tag matching `v*` is pushed. The workflow verifies that the tag matches `Cargo.toml`, runs the full release-readiness gate, builds the Debian package and Linux amd64 tarball, writes SHA-256 checksums, and publishes a GitHub Release automatically.
+
+Example:
+
+```bash
+git tag -a v0.1.0 -m "TermSense v0.1.0"
+git push origin v0.1.0
+```
+
+That tag push is enough to trigger the release.
 
 
 ## APT package cache
