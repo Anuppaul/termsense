@@ -42,7 +42,7 @@ enum Command {
         /// Cursor position in bytes. Defaults to the end of the buffer.
         #[arg(long)]
         cursor: Option<usize>,
-        /// Maximum number of candidates.
+        /// Maximum number of candidates. Use 0 for no truncation.
         #[arg(short = 'n', long, default_value_t = 12)]
         limit: usize,
         /// Return JSON instead of tab-separated text.
