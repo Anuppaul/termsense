@@ -4,7 +4,7 @@
 
 TermSense is a Linux-only terminal intelligence package. It discovers commands available on the current machine and adds IDE-style discovery to an interactive shell without replacing Bash or executing suggestions automatically.
 
-> Status: early implementation / v0.1 development.
+> Status: v0.1 implementation nearing scope freeze; local compile/runtime verification is the final gate before release.
 
 ## Implemented now
 
@@ -63,7 +63,8 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - heredoc-body suggestion suppression;
 - recursive SSH Include discovery with bounded local glob expansion;
 - adaptive ranking with bounded frequency + recency decay;
-- safe per-user config file for renderer behavior.
+- safe per-user config file for renderer behavior;
+- generic cached option discovery from local man pages for commands without dedicated schemas.
 
 The complete product contract is in [docs/CONCEPT.md](docs/CONCEPT.md).
 
@@ -93,7 +94,19 @@ $ sudo git che[ckout]
 
 Internally TermSense still replaces only the active token, so the existing `sudo git ` prefix is preserved safely.
 
-Option completion follows the same full-command display rule:
+Option completion follows the same full-command display rule. Dedicated schemas cover high-value commands, while commands without a dedicated schema can fall back to **local man-page option metadata**:
+
+```text
+$ ls --co
+    > ls --color
+
+$ rsync --del
+    > rsync --delete
+```
+
+The fallback invokes `man`, never the target command, with a 350 ms hard timeout on first lookup and then uses a seven-day local cache.
+
+Dedicated examples:
 
 ```text
 $ git commit --a
@@ -564,6 +577,7 @@ Current TTLs are intentionally short:
 ```text
 Git refs          ~2 seconds
 Docker containers ~2 seconds
+SSH hosts         ~5 seconds
 systemd units     ~10 seconds
 ```
 
@@ -674,12 +688,16 @@ Multiline redraw hardening and broader shell/keymap compatibility also remain ac
 
 The next provider work extends the same generic context model with:
 
-- richer closed-group/compound-shell semantics beyond the active open-frame model;
-- more option-value schemas and positional argument models;
-- additional safe local host sources beyond SSH config/known_hosts;
-- additional provider cache invalidation signals beyond short TTLs;
-- additional safe project manifests and task runners;
-- reproducible release metadata and signed package publishing.
+Post-v0.1 work is intentionally separated from the first release:
+
+- deeper closed-group/compound-shell AST semantics;
+- more specialized option-value schemas beyond generic man metadata;
+- additional project/task-runner adapters;
+- smarter cache invalidation beyond short TTLs;
+- Zsh/Fish adapters;
+- typo/fuzzy ranking;
+- optional natural-language command assistance;
+- signed/repository package publishing.
 
 ## Local verification
 
@@ -719,3 +737,21 @@ or:
 ```
 
 If `apt-cache` is unavailable or does not return usable data, TermSense falls back to installed package names parsed from `/var/lib/dpkg/status`.
+
+## Generic man option cache
+
+For a command without a dedicated option schema, TermSense may read its **local man page** when the active token starts with `-`.
+
+It does not execute the target command. The man lookup is bounded to 350 ms and normalized option names are cached for seven days under:
+
+```text
+$XDG_CACHE_HOME/termsense/man-options-v1/
+```
+
+or:
+
+```text
+~/.cache/termsense/man-options-v1/
+```
+
+This is generic command metadata, not shell history or machine-resource identity.
