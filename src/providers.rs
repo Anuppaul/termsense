@@ -1,4 +1,4 @@
-use crate::CommandEntry;
+use crate::{usage::UsageState, CommandEntry};
 use std::{
     collections::BTreeSet,
     env, fs,
@@ -35,6 +35,27 @@ const GIT_SUBCOMMANDS: &[&str] = &[
     "revert", "rm", "show", "stash", "status", "switch", "tag", "worktree",
 ];
 
+const GIT_COMMIT_OPTIONS: &[&str] = &[
+    "--all", "--amend", "--author=", "--date=", "--dry-run", "--edit", "--message=",
+    "--no-edit", "--no-verify", "--only", "--patch", "--quiet", "--reuse-message=",
+    "--signoff", "--verbose",
+];
+
+const GIT_CHECKOUT_OPTIONS: &[&str] = &[
+    "--conflict=", "--detach", "--force", "--guess", "--ignore-other-worktrees",
+    "--merge", "--orphan=", "--ours", "--patch", "--quiet", "--theirs", "--track",
+];
+
+const GIT_SWITCH_OPTIONS: &[&str] = &[
+    "--create=", "--detach", "--discard-changes", "--force-create=", "--guess",
+    "--merge", "--no-guess", "--orphan=", "--quiet", "--track",
+];
+
+const GIT_LOG_OPTIONS: &[&str] = &[
+    "--all", "--author=", "--decorate", "--follow", "--graph", "--max-count=",
+    "--oneline", "--patch", "--since=", "--stat", "--until=",
+];
+
 const SYSTEMCTL_SUBCOMMANDS: &[&str] = &[
     "cat", "daemon-reload", "default", "disable", "edit", "emergency", "enable",
     "is-active", "is-enabled", "is-failed", "isolate", "kill", "list-unit-files",
@@ -43,12 +64,31 @@ const SYSTEMCTL_SUBCOMMANDS: &[&str] = &[
     "try-restart", "unmask",
 ];
 
+const SYSTEMCTL_GLOBAL_OPTIONS: &[&str] = &[
+    "--all", "--failed", "--force", "--full", "--global", "--help", "--no-ask-password",
+    "--no-block", "--no-legend", "--no-pager", "--now", "--quiet", "--runtime", "--system",
+    "--type=", "--user", "--version",
+];
+
 const DOCKER_SUBCOMMANDS: &[&str] = &[
     "build", "compose", "container", "context", "cp", "create", "exec", "image",
     "images", "info", "inspect", "kill", "login", "logout", "logs", "network",
     "port", "ps", "pull", "push", "rename", "restart", "rm", "rmi", "run",
     "search", "start", "stats", "stop", "system", "tag", "top", "version",
     "volume", "wait",
+];
+
+const DOCKER_LOGS_OPTIONS: &[&str] = &[
+    "--details", "--follow", "--since=", "--tail=", "--timestamps", "--until=",
+];
+
+const DOCKER_PS_OPTIONS: &[&str] = &[
+    "--all", "--filter=", "--format=", "--last=", "--latest", "--no-trunc", "--quiet",
+    "--size",
+];
+
+const DOCKER_EXEC_OPTIONS: &[&str] = &[
+    "--detach", "--env=", "--interactive", "--privileged", "--tty", "--user=", "--workdir=",
 ];
 
 const SYSTEMCTL_UNIT_COMMANDS: &[&str] = &[
@@ -71,6 +111,18 @@ const CARGO_SUBCOMMANDS: &[&str] = &[
     "help", "init", "install", "locate-project", "login", "metadata", "new", "owner",
     "package", "publish", "remove", "report", "run", "rustc", "search", "test", "tree",
     "uninstall", "update", "vendor", "verify-project", "version", "yank",
+];
+
+const CARGO_BUILD_OPTIONS: &[&str] = &[
+    "--all-features", "--examples", "--features=", "--jobs=", "--locked", "--offline",
+    "--package=", "--profile=", "--quiet", "--release", "--target=", "--verbose",
+    "--workspace",
+];
+
+const CARGO_TEST_OPTIONS: &[&str] = &[
+    "--all-features", "--doc", "--features=", "--jobs=", "--lib", "--locked", "--no-run",
+    "--offline", "--package=", "--quiet", "--release", "--test=", "--tests", "--verbose",
+    "--workspace",
 ];
 
 const PNPM_SUBCOMMANDS: &[&str] = &[
@@ -101,6 +153,7 @@ const BUN_SUBCOMMANDS: &[&str] = &[
 
 pub(crate) fn suggest(
     commands: &[CommandEntry],
+    usage: &UsageState,
     buffer: &str,
     cursor: usize,
     limit: usize,
@@ -120,7 +173,7 @@ pub(crate) fn suggest(
             end: cursor,
         });
         add_path_commands(&mut candidates, commands, token);
-        return finalize(candidates, limit, buffer, cursor);
+        return finalize(candidates, usage, limit, buffer, cursor);
     }
 
     let command = effective[0].text;
@@ -164,7 +217,7 @@ pub(crate) fn suggest(
         _ => {}
     }
 
-    finalize(candidates, limit, buffer, cursor)
+    finalize(candidates, usage, limit, buffer, cursor)
 }
 
 fn tokens_before_cursor(buffer: &str, cursor: usize) -> Vec<Token<'_>> {
@@ -235,6 +288,18 @@ fn add_git_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: T
     }
 
     let subcommand = tokens[1].text;
+    if current.text.starts_with('-') {
+        let options = match subcommand {
+            "commit" => GIT_COMMIT_OPTIONS,
+            "checkout" => GIT_CHECKOUT_OPTIONS,
+            "switch" => GIT_SWITCH_OPTIONS,
+            "log" => GIT_LOG_OPTIONS,
+            _ => &[],
+        };
+        add_static(out, options, current, "option", "git-schema", 650);
+        return;
+    }
+
     if tokens.len() == 3 && GIT_REF_COMMANDS.contains(&subcommand) {
         if let Some(output) = run_bounded(
             "git",
@@ -273,6 +338,18 @@ fn add_systemctl_candidates(
     tokens: &[Token<'_>],
     current: Token<'_>,
 ) {
+    if current.text.starts_with('-') {
+        add_static(
+            out,
+            SYSTEMCTL_GLOBAL_OPTIONS,
+            current,
+            "option",
+            "systemctl-schema",
+            650,
+        );
+        return;
+    }
+
     if tokens.len() == 2 {
         add_static(
             out,
@@ -321,6 +398,17 @@ fn add_docker_candidates(
     }
 
     let subcommand = tokens[1].text;
+    if current.text.starts_with('-') {
+        let options = match subcommand {
+            "logs" => DOCKER_LOGS_OPTIONS,
+            "ps" => DOCKER_PS_OPTIONS,
+            "exec" => DOCKER_EXEC_OPTIONS,
+            _ => &[],
+        };
+        add_static(out, options, current, "option", "docker-schema", 650);
+        return;
+    }
+
     if tokens.len() == 3 && DOCKER_CONTAINER_COMMANDS.contains(&subcommand) {
         if let Some(output) = run_bounded("docker", &["ps", "-a", "--format", "{{.Names}}"], 220) {
             for name in output.lines().map(str::trim).filter(|line| !line.is_empty()) {
@@ -350,6 +438,16 @@ fn add_cargo_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current:
             "cargo-schema",
             500,
         );
+        return;
+    }
+
+    if current.text.starts_with('-') {
+        let options = match tokens[1].text {
+            "build" | "check" | "run" => CARGO_BUILD_OPTIONS,
+            "test" => CARGO_TEST_OPTIONS,
+            _ => &[],
+        };
+        add_static(out, options, current, "option", "cargo-schema", 650);
     }
 }
 
@@ -700,13 +798,12 @@ fn score_prefix(candidate: &str, query: &str) -> Option<i64> {
 }
 
 fn finalize(
-    candidates: Vec<Candidate>,
+    mut candidates: Vec<Candidate>,
+    usage: &UsageState,
     limit: usize,
     buffer: &str,
     cursor: usize,
 ) -> Vec<Candidate> {
-    let mut candidates = finish(candidates, limit);
-
     for candidate in &mut candidates {
         candidate.display_text = completed_line(
             buffer,
@@ -715,8 +812,19 @@ fn finalize(
             candidate.replacement_end,
             &candidate.insert_text,
         );
+        candidate.score += usage.boost(&candidate.display_text);
     }
 
+    candidates.sort_by(|a, b| {
+        b.score
+            .cmp(&a.score)
+            .then_with(|| a.display_text.len().cmp(&b.display_text.len()))
+            .then_with(|| a.display_text.cmp(&b.display_text))
+    });
+
+    let mut seen = BTreeSet::new();
+    candidates.retain(|candidate| seen.insert(candidate.insert_text.clone()));
+    candidates.truncate(limit);
     candidates
 }
 
@@ -733,20 +841,6 @@ fn completed_line(
     result.push_str(&buffer[replacement_end..cursor]);
     result.push_str(&buffer[cursor..]);
     result
-}
-
-fn finish(mut candidates: Vec<Candidate>, limit: usize) -> Vec<Candidate> {
-    candidates.sort_by(|a, b| {
-        b.score
-            .cmp(&a.score)
-            .then_with(|| a.display_text.len().cmp(&b.display_text.len()))
-            .then_with(|| a.display_text.cmp(&b.display_text))
-    });
-
-    let mut seen = BTreeSet::new();
-    candidates.retain(|candidate| seen.insert(candidate.insert_text.clone()));
-    candidates.truncate(limit);
-    candidates
 }
 
 fn run_bounded(program: &str, args: &[&str], timeout_ms: u64) -> Option<String> {
@@ -784,6 +878,7 @@ fn run_bounded(program: &str, args: &[&str], timeout_ms: u64) -> Option<String> 
 #[cfg(test)]
 mod tests {
     use super::{completed_line, directory_query, score_prefix, strip_sudo, tokens_before_cursor};
+    use crate::usage::UsageState;
 
     #[test]
     fn tokenizes_trailing_argument_position() {
@@ -815,7 +910,7 @@ mod tests {
 
     #[test]
     fn git_subcommands_are_contextual() {
-        let candidates = super::suggest(&[], "git che", 7, 20);
+        let candidates = super::suggest(&[], &UsageState::default(), "git che", 7, 20);
         let values: Vec<&str> = candidates
             .iter()
             .map(|candidate| candidate.insert_text.as_str())
@@ -828,7 +923,7 @@ mod tests {
 
     #[test]
     fn systemctl_subcommands_are_contextual() {
-        let candidates = super::suggest(&[], "systemctl res", 13, 20);
+        let candidates = super::suggest(&[], &UsageState::default(), "systemctl res", 13, 20);
         let values: Vec<&str> = candidates
             .iter()
             .map(|candidate| candidate.insert_text.as_str())
@@ -841,7 +936,7 @@ mod tests {
 
     #[test]
     fn sudo_suggestion_displays_complete_command() {
-        let candidates = super::suggest(&[], "sudo git che", 12, 20);
+        let candidates = super::suggest(&[], &UsageState::default(), "sudo git che", 12, 20);
         let checkout = candidates
             .iter()
             .find(|candidate| candidate.insert_text == "checkout")
@@ -862,9 +957,30 @@ mod tests {
 
     #[test]
     fn cargo_subcommands_are_generic() {
-        let candidates = super::suggest(&[], "cargo bu", 8, 20);
+        let candidates = super::suggest(&[], &UsageState::default(), "cargo bu", 8, 20);
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "cargo build"));
+    }
+
+    #[test]
+    fn git_commit_flags_are_contextual() {
+        let candidates =
+            super::suggest(&[], &UsageState::default(), "git commit --a", 14, 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "git commit --amend"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "git commit --all"));
+    }
+
+    #[test]
+    fn docker_logs_flags_are_contextual() {
+        let candidates =
+            super::suggest(&[], &UsageState::default(), "docker logs --f", 15, 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "docker logs --follow"));
     }
 }
