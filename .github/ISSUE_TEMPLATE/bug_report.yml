@@ -1,0 +1,61 @@
+name: Bug report
+description: Report a reproducible TermSense problem
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve TermSense. Please keep reports reproducible and remove secrets or private shell data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the behavior you saw and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How can we reproduce it?
+      description: Include the smallest command/prefix and key sequence that reproduces the problem.
+      placeholder: |
+        1. Type: git che
+        2. Press Down
+        3. Press Enter
+        4. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TermSense version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: bash
+    attributes:
+      label: Bash version
+      placeholder: "5.x"
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Linux distribution
+      placeholder: "Ubuntu 24.04"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant diagnostics
+      description: Paste sanitized output from termsense status/doctor or other relevant logs.
+      render: shell
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed passwords, tokens, private hostnames, private paths, and other secrets.
+          required: true
