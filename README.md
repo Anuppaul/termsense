@@ -429,7 +429,7 @@ Requirements:
 
 - Linux;
 - Rust toolchain / Cargo;
-- Bash for the initial shell integration.
+- Bash **5.0+** for the initial shell integration.
 
 ```bash
 git clone https://github.com/Anuppaul/termsense.git
@@ -670,7 +670,7 @@ Only installed `d...` commands are candidates. If `docker` is repeatedly accepte
 
 ## Current Bash renderer boundary
 
-The automatic renderer hooks ASCII printable keystrokes through Readline macros so it can refresh after normal insertion. Bracketed paste remains handled by Readline as a single paste operation. Non-ASCII input remains native Bash input and can still use explicit Ctrl+Space discovery.
+The Bash 5+ automatic renderer hooks ASCII printable keystrokes through Readline macros so it can refresh after normal insertion. Bracketed paste remains handled by Readline as a single paste operation. Non-ASCII input remains native Bash input and can still use explicit Ctrl+Space discovery.
 
 The parser now understands open single/double quotes, backslash-escaped characters, active segments separated by `|`, `&&`, `||`, `;`, or background `&`, common file redirections, and open `$(...)` / backtick command substitutions. Separator characters inside quotes or escaped separators do not split the active context.
 
