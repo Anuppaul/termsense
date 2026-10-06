@@ -25,6 +25,6 @@ Initial TermSense release scope:
 - Debian package builder for amd64 and arm64;
 - safe per-user configuration;
 - local release-readiness gate;
-- no GitHub Actions/CI workflow by project policy.
+- tag-only GitHub Actions release automation; normal pushes and pull requests remain local-verification only.
 
 Released after local automated release-readiness verification passed with 66/66 tests, a clean release build, Bash syntax checks, binary smoke tests, install/uninstall lifecycle checks, Debian package generation, and interactive Bash UX validation.
