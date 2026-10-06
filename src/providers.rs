@@ -593,12 +593,12 @@ fn add_journalctl_candidates(
     tokens: &[Token<'_>],
     current: Token<'_>,
 ) {
-    if let Some(prefix) = current.text.strip_prefix("--unit=") {
-        add_unit_assignment_candidates(out, current, "--unit=", prefix);
+    if current.text.starts_with("--unit=") {
+        add_unit_assignment_candidates(out, current, "--unit=");
         return;
     }
-    if let Some(prefix) = current.text.strip_prefix("--user-unit=") {
-        add_unit_assignment_candidates(out, current, "--user-unit=", prefix);
+    if current.text.starts_with("--user-unit=") {
+        add_unit_assignment_candidates(out, current, "--user-unit=");
         return;
     }
 
@@ -638,7 +638,6 @@ fn add_unit_assignment_candidates(
     out: &mut Vec<Candidate>,
     current: Token<'_>,
     option: &str,
-    prefix: &str,
 ) {
     for unit in systemd_units() {
         let insert = format!("{option}{unit}");
@@ -655,8 +654,6 @@ fn add_unit_assignment_candidates(
             700,
         );
     }
-
-    let _ = prefix;
 }
 
 fn add_ssh_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: Token<'_>) {
@@ -774,6 +771,10 @@ fn parse_known_hosts(path: &PathBuf, hosts: &mut BTreeSet<String>) {
 }
 
 fn add_filesystem_candidates(out: &mut Vec<Candidate>, current: Token<'_>) {
+    if current.text.starts_with('-') {
+        return;
+    }
+
     let Some((lookup_parent, typed_parent, base)) = directory_query(current.text) else {
         return;
     };
