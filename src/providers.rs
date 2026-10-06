@@ -1,4 +1,4 @@
-use crate::{usage::UsageState, CommandEntry};
+use crate::{apt_cache, usage::UsageState, CommandEntry};
 use std::{
     collections::BTreeSet,
     env, fs,
@@ -152,6 +152,36 @@ const BUN_SUBCOMMANDS: &[&str] = &[
     "run", "test", "unlink", "update", "upgrade", "x",
 ];
 
+const FILESYSTEM_COMMANDS: &[&str] = &[
+    "cat", "chmod", "chown", "cp", "du", "file", "head", "less", "ls", "mkdir", "more",
+    "mv", "nano", "readlink", "realpath", "rm", "rmdir", "stat", "tail", "touch", "vi", "vim",
+];
+
+const APT_SUBCOMMANDS: &[&str] = &[
+    "autoremove", "download", "edit-sources", "full-upgrade", "install", "list", "purge",
+    "reinstall", "remove", "satisfy", "search", "show", "update", "upgrade",
+];
+
+const APT_PACKAGE_COMMANDS: &[&str] = &[
+    "download", "install", "purge", "reinstall", "remove", "show",
+];
+
+const APT_OPTIONS: &[&str] = &[
+    "--assume-yes", "--download-only", "--fix-broken", "--no-install-recommends",
+    "--only-upgrade", "--purge", "--quiet", "--reinstall", "--simulate", "--yes",
+];
+
+const JOURNALCTL_OPTIONS: &[&str] = &[
+    "--boot", "--catalog", "--disk-usage", "--follow", "--grep=", "--lines=", "--list-boots",
+    "--no-hostname", "--no-pager", "--output=", "--priority=", "--reverse", "--since=",
+    "--system", "--unit=", "--until=", "--user", "--user-unit=",
+];
+
+const SSH_OPTIONS: &[&str] = &[
+    "-4", "-6", "-A", "-a", "-C", "-f", "-i", "-J", "-L", "-N", "-n", "-o", "-p", "-R",
+    "-T", "-t", "-v",
+];
+
 pub(crate) fn suggest(
     commands: &[CommandEntry],
     usage: &UsageState,
@@ -215,6 +245,12 @@ pub(crate) fn suggest(
             "bun",
         ),
         "make" => add_make_targets(&mut candidates, effective, current),
+        "apt" | "apt-get" => add_apt_candidates(&mut candidates, effective, current),
+        "journalctl" => add_journalctl_candidates(&mut candidates, effective, current),
+        "ssh" => add_ssh_candidates(&mut candidates, effective, current),
+        command if FILESYSTEM_COMMANDS.contains(&command) => {
+            add_filesystem_candidates(&mut candidates, current)
+        }
         _ => {}
     }
 
@@ -514,6 +550,267 @@ fn add_package_manager_candidates(
                 800,
             );
         }
+    }
+}
+
+fn add_apt_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: Token<'_>) {
+    if current.text.starts_with('-') {
+        add_static(out, APT_OPTIONS, current, "option", "apt-schema", 650);
+        return;
+    }
+
+    if tokens.len() == 2 {
+        add_static(
+            out,
+            APT_SUBCOMMANDS,
+            current,
+            "subcommand",
+            "apt-schema",
+            500,
+        );
+        return;
+    }
+
+    if tokens.len() >= 3 && APT_PACKAGE_COMMANDS.contains(&tokens[1].text) {
+        for package in apt_cache::packages() {
+            push_match(
+                out,
+                &package,
+                &package,
+                current.text,
+                "package",
+                "apt-local-cache",
+                current.start,
+                current.end,
+                700,
+            );
+        }
+    }
+}
+
+fn add_journalctl_candidates(
+    out: &mut Vec<Candidate>,
+    tokens: &[Token<'_>],
+    current: Token<'_>,
+) {
+    if let Some(prefix) = current.text.strip_prefix("--unit=") {
+        add_unit_assignment_candidates(out, current, "--unit=", prefix);
+        return;
+    }
+    if let Some(prefix) = current.text.strip_prefix("--user-unit=") {
+        add_unit_assignment_candidates(out, current, "--user-unit=", prefix);
+        return;
+    }
+
+    if current.text.starts_with('-') {
+        add_static(
+            out,
+            JOURNALCTL_OPTIONS,
+            current,
+            "option",
+            "journalctl-schema",
+            650,
+        );
+        return;
+    }
+
+    if tokens.len() >= 3 {
+        let previous = tokens[tokens.len() - 2].text;
+        if matches!(previous, "-u" | "--unit" | "--user-unit") {
+            for unit in systemd_units() {
+                push_match(
+                    out,
+                    &unit,
+                    &unit,
+                    current.text,
+                    "systemd-unit",
+                    "systemd-local",
+                    current.start,
+                    current.end,
+                    700,
+                );
+            }
+        }
+    }
+}
+
+fn add_unit_assignment_candidates(
+    out: &mut Vec<Candidate>,
+    current: Token<'_>,
+    option: &str,
+    prefix: &str,
+) {
+    for unit in systemd_units() {
+        let insert = format!("{option}{unit}");
+        let match_text = format!("{option}{unit}");
+        push_match(
+            out,
+            &insert,
+            &match_text,
+            current.text,
+            "systemd-unit",
+            "systemd-local",
+            current.start,
+            current.end,
+            700,
+        );
+    }
+
+    let _ = prefix;
+}
+
+fn add_ssh_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: Token<'_>) {
+    if current.text.starts_with('-') {
+        add_static(out, SSH_OPTIONS, current, "option", "ssh-schema", 650);
+        return;
+    }
+
+    if tokens.len() != 2 {
+        return;
+    }
+
+    let (user_prefix, host_prefix) = match current.text.rsplit_once('@') {
+        Some((user, host)) => (format!("{user}@"), host),
+        None => (String::new(), current.text),
+    };
+
+    for host in ssh_hosts() {
+        if !host.starts_with(host_prefix) {
+            continue;
+        }
+        let insert = format!("{user_prefix}{host}");
+        push_match(
+            out,
+            &insert,
+            &insert,
+            current.text,
+            "ssh-host",
+            "ssh-local",
+            current.start,
+            current.end,
+            750,
+        );
+    }
+}
+
+fn ssh_hosts() -> Vec<String> {
+    let Some(home) = env::var_os("HOME").map(PathBuf::from) else {
+        return Vec::new();
+    };
+
+    let mut hosts = BTreeSet::new();
+    parse_ssh_config(&home.join(".ssh/config"), &mut hosts);
+    parse_known_hosts(&home.join(".ssh/known_hosts"), &mut hosts);
+    hosts.into_iter().collect()
+}
+
+fn parse_ssh_config(path: &PathBuf, hosts: &mut BTreeSet<String>) {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return;
+    };
+
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let mut parts = line.split_whitespace();
+        let Some(keyword) = parts.next() else {
+            continue;
+        };
+        if !keyword.eq_ignore_ascii_case("host") {
+            continue;
+        }
+
+        for host in parts {
+            if host.starts_with('!') || host.contains('*') || host.contains('?') {
+                continue;
+            }
+            hosts.insert(host.to_owned());
+        }
+    }
+}
+
+fn parse_known_hosts(path: &PathBuf, hosts: &mut BTreeSet<String>) {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return;
+    };
+
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let mut fields = line.split_whitespace();
+        let first = match fields.next() {
+            Some(value) if value.starts_with('@') => fields.next(),
+            Some(value) => Some(value),
+            None => None,
+        };
+        let Some(field) = first else {
+            continue;
+        };
+        if field.starts_with('|') {
+            continue;
+        }
+
+        for host in field.split(',') {
+            let host = host.trim();
+            if host.is_empty() {
+                continue;
+            }
+            let normalized = if host.starts_with('[') {
+                host.split(']').next().map(|value| value.trim_start_matches('['))
+            } else {
+                Some(host)
+            };
+            if let Some(value) = normalized.filter(|value| !value.is_empty()) {
+                hosts.insert(value.to_owned());
+            }
+        }
+    }
+}
+
+fn add_filesystem_candidates(out: &mut Vec<Candidate>, current: Token<'_>) {
+    let Some((lookup_parent, typed_parent, base)) = directory_query(current.text) else {
+        return;
+    };
+
+    let Ok(entries) = fs::read_dir(&lookup_parent) else {
+        return;
+    };
+
+    let show_hidden = base.starts_with('.');
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !show_hidden && name.starts_with('.') {
+            continue;
+        }
+        if !name.starts_with(&base) {
+            continue;
+        }
+
+        let is_dir = entry.path().is_dir();
+        let suffix = if is_dir { "/" } else { "" };
+        let display = format!("{typed_parent}{name}{suffix}");
+        let insert = format!("{typed_parent}{}{suffix}", escape_path_component(&name));
+        let kind = if is_dir { "directory" } else { "file" };
+
+        push_match(
+            out,
+            &insert,
+            &display,
+            current.text,
+            kind,
+            "filesystem",
+            current.start,
+            current.end,
+            700,
+        );
     }
 }
 
@@ -997,5 +1294,30 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "docker logs --follow"));
+    }
+
+    #[test]
+    fn journalctl_options_are_contextual() {
+        let candidates =
+            super::suggest(&[], &UsageState::default(), "journalctl --f", 14, 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "journalctl --follow"));
+    }
+
+    #[test]
+    fn apt_subcommands_are_contextual() {
+        let candidates = super::suggest(&[], &UsageState::default(), "apt ins", 7, 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "apt install"));
+    }
+
+    #[test]
+    fn ssh_options_are_contextual() {
+        let candidates = super::suggest(&[], &UsageState::default(), "ssh -", 5, 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "ssh -i"));
     }
 }
