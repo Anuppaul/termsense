@@ -120,7 +120,7 @@ Section: utils
 Priority: optional
 Architecture: $deb_arch
 Maintainer: TermSense Contributors
-Depends: bash
+Depends: bash (>= 5.0)
 Description: Context-aware inline command suggestions for Linux terminals
  TermSense provides local, context-aware terminal suggestions and Bash
  integration while keeping command execution under the user's control.
