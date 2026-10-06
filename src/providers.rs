@@ -140,7 +140,7 @@ fn tokens_before_cursor(buffer: &str, cursor: usize) -> Vec<Token<'_>> {
 }
 
 fn strip_sudo<'a>(tokens: &'a [Token<'a>]) -> &'a [Token<'a>] {
-    if tokens.first().is_some_and(|token| token.text == "sudo") {
+    if tokens.len() >= 2 && tokens.first().is_some_and(|token| token.text == "sudo") {
         &tokens[1..]
     } else {
         tokens
