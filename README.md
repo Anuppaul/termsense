@@ -357,7 +357,7 @@ Controls:
 | Right Arrow | accept ghost suggestion |
 | Esc | dismiss suggestions |
 | Ctrl+Space | open the larger IntelliSense-style command browser |
-| Enter | normal Bash execution |
+| Enter | accept selected suggestion while the menu is visible; otherwise normal Bash execution |
 
 At an empty prompt, TermSense intentionally stays quiet. Press `Ctrl+Space` to browse commands explicitly.
 
