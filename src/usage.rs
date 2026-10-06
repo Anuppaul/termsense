@@ -140,8 +140,7 @@ fn write_state(path: &Path, state: &UsageState) -> Result<(), String> {
     let mut temp = path.to_path_buf();
     temp.set_extension(format!("tmp-{}", std::process::id()));
 
-    let bytes =
-        serde_json::to_vec(state).map_err(|err| format!("serialize usage state: {err}"))?;
+    let bytes = serde_json::to_vec(state).map_err(|err| format!("serialize usage state: {err}"))?;
     let mut file = fs::File::create(&temp).map_err(|err| format!("create usage state: {err}"))?;
     file.write_all(&bytes)
         .map_err(|err| format!("write usage state: {err}"))?;
