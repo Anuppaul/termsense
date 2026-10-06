@@ -1,4 +1,5 @@
 mod apt_cache;
+mod man_cache;
 mod providers;
 mod runtime_cache;
 mod shell_parse;
@@ -193,6 +194,9 @@ fn run(cli: Cli) -> Result<(), String> {
             }
             if let Some(path) = apt_cache::cache_path() {
                 println!("apt package cache: {}", path.display());
+            }
+            if let Some(path) = man_cache::cache_root() {
+                println!("man option cache: {}", path.display());
             }
             if let Some(path) = runtime_cache::root_path() {
                 println!("ephemeral runtime cache: {}", path.display());
