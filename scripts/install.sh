@@ -82,6 +82,7 @@ if (( enable_shell )); then
   touch "$bashrc"
 
   temp="$(mktemp)"
+  trap 'rm -f -- "$temp"' EXIT
   awk '
     BEGIN { managed = 0 }
     /^# >>> termsense >>>$/ { managed = 1; next }
@@ -98,7 +99,9 @@ fi
 # <<< termsense <<<
 EOF
 
+  chmod --reference="$bashrc" "$temp" 2>/dev/null || true
   mv "$temp" "$bashrc"
+  trap - EXIT
 fi
 
 "$binary" index >/dev/null 2>&1 || true
