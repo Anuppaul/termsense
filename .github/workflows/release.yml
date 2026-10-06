@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish tagged release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+
+      - name: Prepare Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Verify tag matches Cargo version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(
+            awk '
+              /^\[package\]$/ { in_package = 1; next }
+              /^\[/ && $0 != "[package]" { in_package = 0 }
+              in_package && $1 == "version" {
+                gsub(/"/, "", $3)
+                print $3
+                exit
+              }
+            ' Cargo.toml
+          )"
+          expected_tag="v${version}"
+          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            printf 'tag/version mismatch: tag=%s Cargo.toml=%s\n' "$GITHUB_REF_NAME" "$version" >&2
+            exit 1
+          fi
+
+      - name: Run release readiness gate
+        shell: bash
+        run: bash scripts/release-readiness.sh
+
+      - name: Build release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          rm -rf dist
+          mkdir -p dist
+
+          TERMSENSE_SKIP_BUILD=1 bash scripts/package-deb.sh --output dist
+
+          stage="$(mktemp -d)"
+          trap 'rm -rf -- "$stage"' EXIT
+          mkdir -p "$stage/termsense-${version}-linux-amd64"
+          install -m 0755 target/release/termsense "$stage/termsense-${version}-linux-amd64/termsense"
+          install -m 0644 README.md "$stage/termsense-${version}-linux-amd64/README.md"
+          install -m 0644 CHANGELOG.md "$stage/termsense-${version}-linux-amd64/CHANGELOG.md"
+          install -m 0644 LICENSE "$stage/termsense-${version}-linux-amd64/LICENSE"
+          install -m 0644 config/default.conf "$stage/termsense-${version}-linux-amd64/default.conf"
+
+          tar -C "$stage" -czf "dist/termsense_${version}_linux_amd64.tar.gz"             "termsense-${version}-linux-amd64"
+
+          sha256sum dist/* > dist/SHA256SUMS
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes_file="RELEASE_NOTES_${GITHUB_REF_NAME}.md"
+
+          if [[ -f "$notes_file" ]]; then
+            gh release create "$GITHUB_REF_NAME"               dist/*.deb               dist/*.tar.gz               dist/SHA256SUMS               --verify-tag               --title "TermSense ${GITHUB_REF_NAME}"               --notes-file "$notes_file"
+          else
+            gh release create "$GITHUB_REF_NAME"               dist/*.deb               dist/*.tar.gz               dist/SHA256SUMS               --verify-tag               --title "TermSense ${GITHUB_REF_NAME}"               --generate-notes
+          fi
