@@ -1,3 +1,5 @@
+mod providers;
+
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -28,7 +30,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Suggest commands for the current command-line buffer.
+    /// Suggest commands or arguments for the current command-line buffer.
     Suggest {
         /// Current shell buffer.
         buffer: String,
@@ -55,21 +57,10 @@ enum Command {
     Status,
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct Candidate {
-    insert_text: String,
-    display_text: String,
-    kind: &'static str,
-    source: &'static str,
-    score: i64,
-    replacement_start: usize,
-    replacement_end: usize,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct CommandEntry {
-    name: String,
-    path: PathBuf,
+pub(crate) struct CommandEntry {
+    pub(crate) name: String,
+    pub(crate) path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -84,13 +75,6 @@ struct CommandIndex {
     path_env: String,
     dirs: Vec<DirStamp>,
     commands: Vec<CommandEntry>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct CommandContext<'a> {
-    prefix: &'a str,
-    replacement_start: usize,
-    replacement_end: usize,
 }
 
 fn main() -> ExitCode {
@@ -139,23 +123,24 @@ fn run(cli: Cli) -> Result<(), String> {
             if cursor > buffer.len() || !buffer.is_char_boundary(cursor) {
                 return Err("cursor is outside the UTF-8 buffer boundary".into());
             }
+
             let index = load_or_refresh_index(false)?;
-            let candidates = suggest(&index, &buffer, cursor, limit);
+            let candidates = providers::suggest(&index.commands, &buffer, cursor, limit);
             if json {
                 println!(
                     "{}",
                     serde_json::to_string(&candidates).map_err(|e| e.to_string())?
                 );
             } else {
-                for c in candidates {
+                for candidate in candidates {
                     println!(
                         "{}\t{}\t{}\t{}\t{}\t{}",
-                        c.insert_text,
-                        c.kind,
-                        c.source,
-                        c.score,
-                        c.replacement_start,
-                        c.replacement_end
+                        candidate.insert_text,
+                        candidate.kind,
+                        candidate.source,
+                        candidate.score,
+                        candidate.replacement_start,
+                        candidate.replacement_end
                     );
                 }
             }
@@ -178,6 +163,7 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("platform: linux");
             println!("engine: local");
             println!("commands indexed: {}", index.commands.len());
+            println!("context providers: git, systemd, docker, filesystem");
             println!("network required: no");
             if let Some(path) = cache_path() {
                 println!("command cache: {}", path.display());
@@ -208,6 +194,31 @@ fn doctor() -> Result<(), String> {
         println!("  command cache: disabled (HOME/XDG_CACHE_HOME unavailable)");
     }
 
+    println!(
+        "  git provider: {}",
+        if command_available(&index, "git") {
+            "available"
+        } else {
+            "not installed"
+        }
+    );
+    println!(
+        "  docker provider: {}",
+        if command_available(&index, "docker") {
+            "available"
+        } else {
+            "not installed"
+        }
+    );
+    println!(
+        "  systemctl provider: {}",
+        if command_available(&index, "systemctl") {
+            "available"
+        } else {
+            "not installed"
+        }
+    );
+
     if env::var("BASH_VERSION").is_ok() {
         println!("  Bash: detected");
     } else {
@@ -215,6 +226,10 @@ fn doctor() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn command_available(index: &CommandIndex, name: &str) -> bool {
+    index.commands.iter().any(|entry| entry.name == name)
 }
 
 fn path_dirs() -> Vec<PathBuf> {
@@ -260,7 +275,7 @@ fn discover_path_commands(dirs: &[PathBuf]) -> Vec<CommandEntry> {
             if !is_executable_file(&meta) {
                 continue;
             }
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
                 continue;
             };
             if name.is_empty() {
@@ -281,11 +296,12 @@ fn is_executable_file(meta: &fs::Metadata) -> bool {
 }
 
 fn cache_path() -> Option<PathBuf> {
-    if let Some(dir) = env::var_os("XDG_CACHE_HOME").filter(|v| !v.is_empty()) {
+    if let Some(dir) = env::var_os("XDG_CACHE_HOME").filter(|value| !value.is_empty()) {
         return Some(PathBuf::from(dir).join("termsense/commands-v1.json"));
     }
+
     env::var_os("HOME")
-        .filter(|v| !v.is_empty())
+        .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .map(|home| home.join(".cache/termsense/commands-v1.json"))
 }
@@ -328,168 +344,51 @@ fn write_index_cache(path: &Path, index: &CommandIndex) -> Result<(), String> {
     let Some(parent) = path.parent() else {
         return Err("invalid cache path".into());
     };
-    fs::create_dir_all(parent).map_err(|e| format!("create cache directory: {e}"))?;
+    fs::create_dir_all(parent).map_err(|err| format!("create cache directory: {err}"))?;
 
     let mut temp = path.to_path_buf();
     temp.set_extension(format!("tmp-{}", std::process::id()));
-    let bytes = serde_json::to_vec(index).map_err(|e| format!("serialize command index: {e}"))?;
+    let bytes =
+        serde_json::to_vec(index).map_err(|err| format!("serialize command index: {err}"))?;
 
-    let mut file = fs::File::create(&temp).map_err(|e| format!("create command cache: {e}"))?;
+    let mut file =
+        fs::File::create(&temp).map_err(|err| format!("create command cache: {err}"))?;
     file.write_all(&bytes)
-        .map_err(|e| format!("write command cache: {e}"))?;
+        .map_err(|err| format!("write command cache: {err}"))?;
     file.sync_all()
-        .map_err(|e| format!("sync command cache: {e}"))?;
-    fs::rename(&temp, path).map_err(|e| format!("replace command cache: {e}"))?;
+        .map_err(|err| format!("sync command cache: {err}"))?;
+    fs::rename(&temp, path).map_err(|err| format!("replace command cache: {err}"))?;
     Ok(())
-}
-
-fn command_context(buffer: &str, cursor: usize) -> Option<CommandContext<'_>> {
-    let before = &buffer[..cursor];
-    let trimmed = before.trim_start_matches(char::is_whitespace);
-    let leading = before.len() - trimmed.len();
-
-    if trimmed.is_empty() {
-        return Some(CommandContext {
-            prefix: "",
-            replacement_start: cursor,
-            replacement_end: cursor,
-        });
-    }
-
-    if let Some(after_sudo) = trimmed.strip_prefix("sudo") {
-        if after_sudo.is_empty() {
-            return Some(CommandContext {
-                prefix: trimmed,
-                replacement_start: leading,
-                replacement_end: cursor,
-            });
-        }
-
-        if after_sudo.chars().next().is_some_and(char::is_whitespace) {
-            let command = after_sudo.trim_start_matches(char::is_whitespace);
-            if command.contains(char::is_whitespace) {
-                return None;
-            }
-            return Some(CommandContext {
-                prefix: command,
-                replacement_start: cursor - command.len(),
-                replacement_end: cursor,
-            });
-        }
-    }
-
-    if trimmed.contains(char::is_whitespace) {
-        return None;
-    }
-
-    Some(CommandContext {
-        prefix: trimmed,
-        replacement_start: leading,
-        replacement_end: cursor,
-    })
-}
-
-fn suggest(index: &CommandIndex, buffer: &str, cursor: usize, limit: usize) -> Vec<Candidate> {
-    if limit == 0 {
-        return Vec::new();
-    }
-
-    let Some(context) = command_context(buffer, cursor) else {
-        return Vec::new();
-    };
-
-    let mut candidates: Vec<Candidate> = index
-        .commands
-        .iter()
-        .filter_map(|entry| {
-            score_prefix(&entry.name, context.prefix).map(|score| Candidate {
-                insert_text: entry.name.clone(),
-                display_text: entry.name.clone(),
-                kind: "command",
-                source: "path",
-                score,
-                replacement_start: context.replacement_start,
-                replacement_end: context.replacement_end,
-            })
-        })
-        .collect();
-
-    candidates.sort_by(|a, b| {
-        b.score
-            .cmp(&a.score)
-            .then_with(|| a.display_text.len().cmp(&b.display_text.len()))
-            .then_with(|| a.display_text.cmp(&b.display_text))
-    });
-    candidates.truncate(limit);
-    candidates
-}
-
-fn score_prefix(candidate: &str, query: &str) -> Option<i64> {
-    if query.is_empty() {
-        return Some(100 - candidate.len() as i64);
-    }
-    if candidate == query {
-        return Some(10_000);
-    }
-    if candidate.starts_with(query) {
-        return Some(5_000 - (candidate.len() as i64 - query.len() as i64));
-    }
-
-    let candidate_lower = candidate.to_ascii_lowercase();
-    let query_lower = query.to_ascii_lowercase();
-    if candidate_lower.starts_with(&query_lower) {
-        return Some(4_000 - (candidate.len() as i64 - query.len() as i64));
-    }
-
-    None
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{command_context, score_prefix, CommandContext};
+    use super::discover_path_commands;
+    use std::{fs, os::unix::fs::PermissionsExt};
 
     #[test]
-    fn exact_match_wins() {
-        assert!(score_prefix("git", "git").unwrap() > score_prefix("gitk", "git").unwrap());
-    }
+    fn path_discovery_only_keeps_executables() {
+        let root = std::env::temp_dir().join(format!(
+            "termsense-test-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("path")
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
 
-    #[test]
-    fn prefix_matches() {
-        assert!(score_prefix("systemctl", "sys").is_some());
-        assert!(score_prefix("journalctl", "sys").is_none());
-    }
+        let executable = root.join("hello");
+        let plain = root.join("notes");
+        fs::write(&executable, "#!/bin/sh\n").unwrap();
+        fs::write(&plain, "text\n").unwrap();
 
-    #[test]
-    fn empty_query_allows_discovery() {
-        assert!(score_prefix("bash", "").is_some());
-    }
+        let mut permissions = fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&executable, permissions).unwrap();
 
-    #[test]
-    fn parses_first_command_token() {
-        assert_eq!(
-            command_context("  sys", 5),
-            Some(CommandContext {
-                prefix: "sys",
-                replacement_start: 2,
-                replacement_end: 5,
-            })
-        );
-    }
+        let commands = discover_path_commands(&[root.clone()]);
+        assert!(commands.iter().any(|entry| entry.name == "hello"));
+        assert!(!commands.iter().any(|entry| entry.name == "notes"));
 
-    #[test]
-    fn parses_command_after_sudo() {
-        assert_eq!(
-            command_context("sudo sys", 8),
-            Some(CommandContext {
-                prefix: "sys",
-                replacement_start: 5,
-                replacement_end: 8,
-            })
-        );
-    }
-
-    #[test]
-    fn stops_after_command_arguments_begin() {
-        assert_eq!(command_context("git status", 10), None);
+        let _ = fs::remove_dir_all(root);
     }
 }
