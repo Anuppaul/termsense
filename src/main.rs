@@ -1,3 +1,4 @@
+mod apt_cache;
 mod providers;
 mod usage;
 
@@ -176,7 +177,7 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("platform: linux");
             println!("engine: local");
             println!("commands indexed: {}", index.commands.len());
-            println!("context providers: git, systemd, docker, filesystem, project manifests");
+            println!("context providers: git, systemd, docker, filesystem, ssh, apt, project manifests");
             println!("network required: no");
             if let Some(path) = cache_path() {
                 println!("command cache: {}", path.display());
@@ -186,6 +187,9 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("accepted usage events: {}", usage.total_events());
             if let Some(path) = usage::state_path() {
                 println!("usage state: {}", path.display());
+            }
+            if let Some(path) = apt_cache::cache_path() {
+                println!("apt package cache: {}", path.display());
             }
         }
     }
