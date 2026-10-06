@@ -152,8 +152,8 @@ fn run(cli: Cli) -> Result<(), String> {
                         candidate.kind,
                         candidate.source,
                         candidate.score,
-                        candidate.replacement_start,
-                        candidate.replacement_end,
+                        byte_to_char_offset(&buffer, candidate.replacement_start),
+                        byte_to_char_offset(&buffer, candidate.replacement_end),
                         candidate.usage_key
                     );
                 }
@@ -270,6 +270,10 @@ fn doctor() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn byte_to_char_offset(value: &str, byte_offset: usize) -> usize {
+    value[..byte_offset].chars().count()
 }
 
 fn shell_safe_display(value: &str) -> String {
@@ -434,7 +438,7 @@ fn write_index_cache(path: &Path, index: &CommandIndex) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{discover_path_commands, shell_safe_display};
+    use super::{byte_to_char_offset, discover_path_commands, shell_safe_display};
     use std::{fs, os::unix::fs::PermissionsExt};
 
     #[test]
@@ -461,6 +465,13 @@ mod tests {
         assert!(!commands.iter().any(|entry| entry.name == "notes"));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn shell_offsets_convert_utf8_bytes_to_character_positions() {
+        let value = "écho git";
+        assert_eq!(byte_to_char_offset(value, 2), 1);
+        assert_eq!(byte_to_char_offset(value, 6), 5);
     }
 
     #[test]
