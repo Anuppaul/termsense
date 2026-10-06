@@ -3,7 +3,7 @@ use std::{
     collections::BTreeSet,
     env, fs,
     io::Read,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
     time::Duration,
@@ -66,6 +66,39 @@ const GIT_REF_COMMANDS: &[&str] = &[
     "branch", "checkout", "merge", "rebase", "reset", "restore", "show", "switch",
 ];
 
+const CARGO_SUBCOMMANDS: &[&str] = &[
+    "add", "bench", "build", "check", "clean", "doc", "fetch", "fix", "generate-lockfile",
+    "help", "init", "install", "locate-project", "login", "metadata", "new", "owner",
+    "package", "publish", "remove", "report", "run", "rustc", "search", "test", "tree",
+    "uninstall", "update", "vendor", "verify-project", "version", "yank",
+];
+
+const PNPM_SUBCOMMANDS: &[&str] = &[
+    "add", "audit", "build", "create", "deploy", "dev", "dlx", "exec", "fetch", "import",
+    "init", "install", "link", "list", "outdated", "patch", "prune", "publish", "rebuild",
+    "remove", "run", "start", "store", "test", "update", "why",
+];
+
+const NPM_SUBCOMMANDS: &[&str] = &[
+    "access", "adduser", "audit", "cache", "ci", "config", "dedupe", "diff", "dist-tag",
+    "docs", "doctor", "exec", "explain", "explore", "help", "hook", "init", "install",
+    "link", "login", "logout", "ls", "outdated", "owner", "pack", "ping", "pkg", "prefix",
+    "profile", "prune", "publish", "query", "rebuild", "repo", "restart", "root", "run",
+    "search", "shrinkwrap", "star", "stars", "start", "stop", "team", "test", "token",
+    "uninstall", "unpublish", "unstar", "update", "version", "view", "whoami",
+];
+
+const YARN_SUBCOMMANDS: &[&str] = &[
+    "add", "bin", "cache", "config", "create", "dedupe", "dlx", "exec", "info", "init",
+    "install", "link", "node", "npm", "pack", "patch", "plugin", "rebuild", "remove", "run",
+    "set", "stage", "unlink", "up", "why", "workspace", "workspaces",
+];
+
+const BUN_SUBCOMMANDS: &[&str] = &[
+    "add", "build", "create", "dev", "install", "link", "pm", "publish", "remove", "repl",
+    "run", "test", "unlink", "update", "upgrade", "x",
+];
+
 pub(crate) fn suggest(
     commands: &[CommandEntry],
     buffer: &str,
@@ -98,10 +131,57 @@ pub(crate) fn suggest(
         "systemctl" => add_systemctl_candidates(&mut candidates, effective, current),
         "docker" => add_docker_candidates(&mut candidates, effective, current),
         "cd" => add_directory_candidates(&mut candidates, current),
+        "cargo" => add_static(
+            &mut candidates,
+            CARGO_SUBCOMMANDS,
+            current,
+            "subcommand",
+            "cargo-schema",
+            500,
+        ),
+        "pnpm" => add_package_manager_candidates(
+            &mut candidates,
+            effective,
+            current,
+            PNPM_SUBCOMMANDS,
+            "pnpm",
+        ),
+        "npm" => add_package_manager_candidates(
+            &mut candidates,
+            effective,
+            current,
+            NPM_SUBCOMMANDS,
+            "npm",
+        ),
+        "yarn" => add_package_manager_candidates(
+            &mut candidates,
+            effective,
+            current,
+            YARN_SUBCOMMANDS,
+            "yarn",
+        ),
+        "bun" => add_package_manager_candidates(
+            &mut candidates,
+            effective,
+            current,
+            BUN_SUBCOMMANDS,
+            "bun",
+        ),
+        "make" => add_make_targets(&mut candidates, effective, current),
         _ => {}
     }
 
-    finish(candidates, limit)
+    let mut candidates = finish(candidates, limit);
+    for candidate in &mut candidates {
+        candidate.display_text = completed_line(
+            buffer,
+            cursor,
+            candidate.replacement_start,
+            candidate.replacement_end,
+            &candidate.insert_text,
+        );
+    }
+    candidates
 }
 
 fn tokens_before_cursor(buffer: &str, cursor: usize) -> Vec<Token<'_>> {
@@ -272,6 +352,464 @@ fn add_docker_candidates(
             }
         }
     }
+}
+
+fn add_package_manager_candidates(
+    out: &mut Vec<Candidate>,
+    tokens: &[Token<'_>],
+    current: Token<'_>,
+    schema: &[&str],
+    manager: &'static str,
+) {
+    if tokens.len() == 2 {
+        add_static(out, schema, current, "subcommand", "package-manager-schema", 400);
+
+        if manager != "npm" {
+            for script in package_scripts() {
+                push_match(
+                    out,
+                    &script,
+                    &script,
+                    current.text,
+                    "project-script",
+                    "package-json",
+                    current.start,
+                    current.end,
+                    800,
+                );
+            }
+        }
+        return;
+    }
+
+    if tokens.len() == 3 && tokens[1].text == "run" {
+        for script in package_scripts() {
+            push_match(
+                out,
+                &script,
+                &script,
+                current.text,
+                "project-script",
+                "package-json",
+                current.start,
+                current.end,
+                800,
+            );
+        }
+    }
+}
+
+fn package_scripts() -> Vec<String> {
+    let Some(path) = find_upwards("package.json") else {
+        return Vec::new();
+    };
+    let Ok(raw) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return Vec::new();
+    };
+    let Some(scripts) = value.get("scripts").and_then(|value| value.as_object()) else {
+        return Vec::new();
+    };
+
+    let mut names: Vec<String> = scripts.keys().cloned().collect();
+    names.sort();
+    names
+}
+
+fn add_make_targets(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: Token<'_>) {
+    if tokens.len() != 2 {
+        return;
+    }
+
+    for target in make_targets() {
+        push_match(
+            out,
+            &target,
+            &target,
+            current.text,
+            "make-target",
+            "makefile",
+            current.start,
+            current.end,
+            800,
+        );
+    }
+}
+
+fn make_targets() -> Vec<String> {
+    let manifest = ["GNUmakefile", "Makefile", "makefile"]
+        .iter()
+        .find_map(|name| find_upwards(name));
+    let Some(path) = manifest else {
+        return Vec::new();
+    };
+    let Ok(raw) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+
+    let mut targets = BTreeSet::new();
+    for line in raw.lines() {
+        if line.starts_with('\t') || line.trim_start().starts_with('#') {
+            continue;
+        }
+        let Some((left, _)) = line.split_once(':') else {
+            continue;
+        };
+        if left.contains('=') || left.contains('%') || left.contains('
+    let Some((lookup_parent, typed_parent, base)) = directory_query(current.text) else {
+        return;
+    };
+
+    let Ok(entries) = fs::read_dir(&lookup_parent) else {
+        return;
+    };
+
+    let show_hidden = base.starts_with('.');
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() && !file_type.is_symlink() {
+            continue;
+        }
+
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !show_hidden && name.starts_with('.') {
+            continue;
+        }
+        if !name.starts_with(&base) {
+            continue;
+        }
+
+        let display = format!("{typed_parent}{name}/");
+        let insert = format!("{typed_parent}{}/", escape_path_component(&name));
+        push_match(
+            out,
+            &insert,
+            &display,
+            current.text,
+            "directory",
+            "filesystem",
+            current.start,
+            current.end,
+            700,
+        );
+    }
+}
+
+fn directory_query(input: &str) -> Option<(PathBuf, String, String)> {
+    let (typed_parent, base) = match input.rfind('/') {
+        Some(index) => (input[..=index].to_owned(), input[index + 1..].to_owned()),
+        None => (String::new(), input.to_owned()),
+    };
+
+    let lookup_parent = if typed_parent.is_empty() {
+        env::current_dir().ok()?
+    } else if typed_parent == "~/" {
+        PathBuf::from(env::var_os("HOME")?)
+    } else if let Some(rest) = typed_parent.strip_prefix("~/") {
+        PathBuf::from(env::var_os("HOME")?).join(rest)
+    } else {
+        PathBuf::from(&typed_parent)
+    };
+
+    Some((lookup_parent, typed_parent, base))
+}
+
+fn escape_path_component(name: &str) -> String {
+    let mut escaped = String::with_capacity(name.len());
+    for ch in name.chars() {
+        if ch.is_whitespace()
+            || ch == char::from(96u8)
+            || matches!(
+                ch,
+                '\\' | '\'' | '"' | '$' | '!' | '&' | ';' | '|' | '<' | '>' | '('
+                    | ')' | '[' | ']' | '{' | '}' | '*' | '?' | '#'
+            )
+        {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
+
+fn systemd_units() -> Vec<String> {
+    const DIRS: &[&str] = &[
+        "/etc/systemd/system",
+        "/run/systemd/system",
+        "/usr/local/lib/systemd/system",
+        "/usr/lib/systemd/system",
+        "/lib/systemd/system",
+    ];
+
+    let mut units = BTreeSet::new();
+    for dir in DIRS {
+        let Ok(entries) = fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if is_unit_name(&name) {
+                units.insert(name);
+            }
+        }
+    }
+    units.into_iter().collect()
+}
+
+fn is_unit_name(name: &str) -> bool {
+    [
+        ".service", ".socket", ".target", ".timer", ".mount", ".automount", ".path",
+        ".slice", ".scope",
+    ]
+    .iter()
+    .any(|suffix| name.ends_with(suffix))
+}
+
+fn add_static(
+    out: &mut Vec<Candidate>,
+    values: &[&str],
+    current: Token<'_>,
+    kind: &'static str,
+    source: &'static str,
+    boost: i64,
+) {
+    for value in values {
+        push_match(
+            out,
+            value,
+            value,
+            current.text,
+            kind,
+            source,
+            current.start,
+            current.end,
+            boost,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_match(
+    out: &mut Vec<Candidate>,
+    insert_text: &str,
+    display_text: &str,
+    prefix: &str,
+    kind: &'static str,
+    source: &'static str,
+    replacement_start: usize,
+    replacement_end: usize,
+    boost: i64,
+) {
+    if let Some(score) = score_prefix(display_text, prefix) {
+        out.push(Candidate {
+            insert_text: insert_text.to_owned(),
+            display_text: display_text.to_owned(),
+            kind,
+            source,
+            score: score + boost,
+            replacement_start,
+            replacement_end,
+        });
+    }
+}
+
+fn score_prefix(candidate: &str, query: &str) -> Option<i64> {
+    if query.is_empty() {
+        return Some(100 - candidate.len() as i64);
+    }
+    if candidate == query {
+        return Some(10_000);
+    }
+    if candidate.starts_with(query) {
+        return Some(5_000 - (candidate.len() as i64 - query.len() as i64));
+    }
+
+    let candidate_lower = candidate.to_ascii_lowercase();
+    let query_lower = query.to_ascii_lowercase();
+    if candidate_lower.starts_with(&query_lower) {
+        return Some(4_000 - (candidate.len() as i64 - query.len() as i64));
+    }
+
+    None
+}
+
+fn finish(mut candidates: Vec<Candidate>, limit: usize) -> Vec<Candidate> {
+    candidates.sort_by(|a, b| {
+        b.score
+            .cmp(&a.score)
+            .then_with(|| a.display_text.len().cmp(&b.display_text.len()))
+            .then_with(|| a.display_text.cmp(&b.display_text))
+    });
+
+    let mut seen = BTreeSet::new();
+    candidates.retain(|candidate| seen.insert(candidate.insert_text.clone()));
+    candidates.truncate(limit);
+    candidates
+}
+
+fn run_bounded(program: &str, args: &[&str], timeout_ms: u64) -> Option<String> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    let stdout = child.stdout.take()?;
+    let reader = thread::spawn(move || {
+        let mut output = String::new();
+        let mut reader = stdout;
+        let _ = reader.read_to_string(&mut output);
+        output
+    });
+
+    match child.wait_timeout(Duration::from_millis(timeout_ms)).ok()? {
+        Some(status) if status.success() => reader.join().ok(),
+        Some(_) => {
+            let _ = reader.join();
+            None
+        }
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = reader.join();
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{completed_line, directory_query, score_prefix, strip_sudo, tokens_before_cursor};
+
+    #[test]
+    fn tokenizes_trailing_argument_position() {
+        let tokens = tokens_before_cursor("git checkout ", 13);
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[2].text, "");
+        assert_eq!(tokens[2].start, 13);
+    }
+
+    #[test]
+    fn strips_sudo_for_context_routing() {
+        let tokens = tokens_before_cursor("sudo git che", 12);
+        let effective = strip_sudo(&tokens);
+        assert_eq!(effective[0].text, "git");
+        assert_eq!(effective[1].text, "che");
+    }
+
+    #[test]
+    fn exact_prefix_scores_above_longer_match() {
+        assert!(score_prefix("git", "git").unwrap() > score_prefix("gitk", "git").unwrap());
+    }
+
+    #[test]
+    fn directory_query_preserves_tilde_prefix() {
+        let (_, typed_parent, base) = directory_query("~/Doc").unwrap();
+        assert_eq!(typed_parent, "~/");
+        assert_eq!(base, "Doc");
+    }
+
+    #[test]
+    fn git_subcommands_are_contextual() {
+        let candidates = super::suggest(&[], "git che", 7, 20);
+        let values: Vec<&str> = candidates
+            .iter()
+            .map(|candidate| candidate.insert_text.as_str())
+            .collect();
+        assert!(values.contains(&"checkout"));
+        assert!(values.contains(&"check-ignore"));
+        assert!(!values.contains(&"status"));
+    }
+
+    #[test]
+    fn systemctl_subcommands_are_contextual() {
+        let candidates = super::suggest(&[], "systemctl res", 13, 20);
+        let values: Vec<&str> = candidates
+            .iter()
+            .map(|candidate| candidate.insert_text.as_str())
+            .collect();
+        assert!(values.contains(&"restart"));
+        assert!(values.contains(&"reset-failed"));
+        assert!(values.contains(&"rescue"));
+    }
+
+    #[test]
+    fn sudo_preserves_nested_command_context() {
+        let candidates = super::suggest(&[], "sudo git che", 12, 20);
+        let checkout = candidates
+            .iter()
+            .find(|candidate| candidate.insert_text == "checkout")
+            .expect("checkout candidate");
+        assert_eq!(checkout.display_text, "sudo git checkout");
+    }
+
+    #[test]
+    fn full_display_preserves_surrounding_command() {
+        assert_eq!(
+            completed_line("sudo git che", 12, 9, 12, "checkout"),
+            "sudo git checkout"
+        );
+    }
+
+    #[test]
+    fn cargo_subcommands_are_generic() {
+        let candidates = super::suggest(&[], "cargo bu", 8, 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "cargo build"));
+    }
+}
+) {
+            continue;
+        }
+        for target in left.split_whitespace() {
+            if target.is_empty() || target.starts_with('.') {
+                continue;
+            }
+            targets.insert(target.to_owned());
+        }
+    }
+
+    targets.into_iter().collect()
+}
+
+fn find_upwards(name: &str) -> Option<PathBuf> {
+    let mut dir = env::current_dir().ok()?;
+    for _ in 0..8 {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    None
+}
+
+fn completed_line(
+    buffer: &str,
+    cursor: usize,
+    replacement_start: usize,
+    replacement_end: usize,
+    insert_text: &str,
+) -> String {
+    let mut result = String::with_capacity(buffer.len() + insert_text.len());
+    result.push_str(&buffer[..replacement_start]);
+    result.push_str(insert_text);
+    result.push_str(&buffer[replacement_end..cursor]);
+    result.push_str(&buffer[cursor..]);
+    result
 }
 
 fn add_directory_candidates(out: &mut Vec<Candidate>, current: Token<'_>) {
