@@ -15,32 +15,13 @@ __TERMSENSE_BASH_LOADED=1
 __TERMSENSE_VISIBLE=0
 __TERMSENSE_GHOST_LEN=0
 __TERMSENSE_SELECTED=0
-__TERMSENSE_TOKEN_START=0
-__TERMSENSE_TOKEN_PREFIX=""
+__TERMSENSE_REPLACE_START=0
+__TERMSENSE_REPLACE_END=0
+__TERMSENSE_PREFIX=""
 __TERMSENSE_CANDIDATES=()
 
 _termsense_binary() {
   command -v termsense 2>/dev/null
-}
-
-_termsense_context() {
-  local left="${READLINE_LINE:0:READLINE_POINT}"
-  local body="$left"
-  body="${body#"${body%%[![:space:]]*}"}"
-
-  __TERMSENSE_TOKEN_PREFIX=""
-  __TERMSENSE_TOKEN_START=$READLINE_POINT
-
-  if [[ "$body" =~ ^sudo[[:space:]]+([^[:space:]]*)$ ]]; then
-    __TERMSENSE_TOKEN_PREFIX="${BASH_REMATCH[1]}"
-  elif [[ "$body" =~ ^([^[:space:]]*)$ ]]; then
-    __TERMSENSE_TOKEN_PREFIX="${BASH_REMATCH[1]}"
-  else
-    return 1
-  fi
-
-  __TERMSENSE_TOKEN_START=$((READLINE_POINT - ${#__TERMSENSE_TOKEN_PREFIX}))
-  return 0
 }
 
 _termsense_clear_overlay() {
@@ -52,6 +33,7 @@ _termsense_clear_overlay() {
   if (( old_ghost > 0 )); then
     printf '%*s' "$old_ghost" '' >&2
   fi
+
   local i
   for ((i=0; i<old_visible; i++)); do
     printf '\033[1B\r\033[2K' >&2
@@ -80,10 +62,17 @@ _termsense_activate_navigation() {
   bind -x '"\e":_termsense_dismiss' 2>/dev/null || true
 }
 
-_termsense_dismiss() {
-  _termsense_clear_overlay
+_termsense_reset_state() {
   __TERMSENSE_CANDIDATES=()
   __TERMSENSE_SELECTED=0
+  __TERMSENSE_REPLACE_START=$READLINE_POINT
+  __TERMSENSE_REPLACE_END=$READLINE_POINT
+  __TERMSENSE_PREFIX=""
+}
+
+_termsense_dismiss() {
+  _termsense_clear_overlay
+  _termsense_reset_state
   _termsense_restore_navigation
 }
 
@@ -91,10 +80,17 @@ _termsense_query() {
   local ts
   ts="$(_termsense_binary)" || return 1
 
-  __TERMSENSE_CANDIDATES=()
-  local value _kind _source _score _start _end
-  while IFS=$'\t' read -r value _kind _source _score _start _end; do
-    [[ -n "$value" ]] && __TERMSENSE_CANDIDATES+=("$value")
+  _termsense_reset_state
+  local value _kind _source _score start end first=1
+  while IFS=$'\t' read -r value _kind _source _score start end; do
+    [[ -n "$value" ]] || continue
+    __TERMSENSE_CANDIDATES+=("$value")
+    if (( first )); then
+      __TERMSENSE_REPLACE_START=$start
+      __TERMSENSE_REPLACE_END=$end
+      __TERMSENSE_PREFIX="${READLINE_LINE:start:end-start}"
+      first=0
+    fi
   done < <("$ts" suggest "$READLINE_LINE" --cursor "$READLINE_POINT" --limit 24 2>/dev/null)
 
   (("${#__TERMSENSE_CANDIDATES[@]}" > 0))
@@ -114,8 +110,8 @@ _termsense_draw_overlay() {
 
   local selected="${__TERMSENSE_CANDIDATES[__TERMSENSE_SELECTED]}"
   local suffix=""
-  if [[ "$TERMSENSE_GHOST" != "0" && "$READLINE_POINT" -eq "${#READLINE_LINE}" && "$selected" == "$__TERMSENSE_TOKEN_PREFIX"* ]]; then
-    suffix="${selected:${#__TERMSENSE_TOKEN_PREFIX}}"
+  if [[ "$TERMSENSE_GHOST" != "0"         && "$READLINE_POINT" -eq "${#READLINE_LINE}"         && "$selected" == "$__TERMSENSE_PREFIX"* ]]; then
+    suffix="${selected:${#__TERMSENSE_PREFIX}}"
   fi
 
   local max=$TERMSENSE_MAX_VISIBLE
@@ -159,14 +155,9 @@ _termsense_draw_overlay() {
 
 _termsense_refresh() {
   [[ "$TERMSENSE_AUTO_SUGGEST" != "0" ]] || return 0
-  _termsense_context || {
-    _termsense_dismiss
-    return 0
-  }
 
-  # Do not flood a completely empty prompt. Ctrl+Space remains explicit discovery.
   local left="${READLINE_LINE:0:READLINE_POINT}"
-  if [[ -z "$__TERMSENSE_TOKEN_PREFIX" && ! "$left" =~ ^[[:space:]]*sudo[[:space:]]+$ ]]; then
+  if [[ -z "${left//[[:space:]]/}" ]]; then
     _termsense_dismiss
     return 0
   fi
@@ -182,11 +173,12 @@ _termsense_refresh() {
 _termsense_accept_selected() {
   local total=${#__TERMSENSE_CANDIDATES[@]}
   (( total > 0 )) || return 0
+
   local selected="${__TERMSENSE_CANDIDATES[__TERMSENSE_SELECTED]}"
-  local right="${READLINE_LINE:READLINE_POINT}"
-  local left="${READLINE_LINE:0:__TERMSENSE_TOKEN_START}"
+  local left="${READLINE_LINE:0:__TERMSENSE_REPLACE_START}"
+  local right="${READLINE_LINE:__TERMSENSE_REPLACE_END}"
   READLINE_LINE="${left}${selected}${right}"
-  READLINE_POINT=$((__TERMSENSE_TOKEN_START + ${#selected}))
+  READLINE_POINT=$((__TERMSENSE_REPLACE_START + ${#selected}))
   _termsense_dismiss
 }
 
@@ -201,6 +193,7 @@ _termsense_accept_ghost() {
 _termsense_select_prev() {
   local total=${#__TERMSENSE_CANDIDATES[@]}
   (( total > 0 )) || return 0
+
   if (( __TERMSENSE_SELECTED == 0 )); then
     __TERMSENSE_SELECTED=$((total - 1))
   else
@@ -212,6 +205,7 @@ _termsense_select_prev() {
 _termsense_select_next() {
   local total=${#__TERMSENSE_CANDIDATES[@]}
   (( total > 0 )) || return 0
+
   __TERMSENSE_SELECTED=$(((__TERMSENSE_SELECTED + 1) % total))
   _termsense_draw_overlay
 }
@@ -230,15 +224,30 @@ _termsense_ctrl_space() {
   }
 
   _termsense_clear_overlay
-  _termsense_context || true
 
   local -a candidates=()
-  local value _kind _source _score _start _end
-  while IFS=$'\t' read -r value _kind _source _score _start _end; do
-    [[ -n "$value" ]] && candidates+=("$value")
+  local value _kind _source _score start end
+  local replace_start=$READLINE_POINT
+  local replace_end=$READLINE_POINT
+  local prefix=""
+  local first=1
+
+  while IFS=$'\t' read -r value _kind _source _score start end; do
+    [[ -n "$value" ]] || continue
+    candidates+=("$value")
+    if (( first )); then
+      replace_start=$start
+      replace_end=$end
+      prefix="${READLINE_LINE:start:end-start}"
+      first=0
+    fi
   done < <("$ts" suggest "$READLINE_LINE" --cursor "$READLINE_POINT" --limit 500 2>/dev/null)
 
-  (("${#candidates[@]}" > 0)) || return 0
+  (("${#candidates[@]}" > 0)) || {
+    _termsense_reset_state
+    _termsense_restore_navigation
+    return 0
+  }
 
   local selected=""
   if command -v fzf >/dev/null 2>&1; then
@@ -246,7 +255,7 @@ _termsense_ctrl_space() {
       --height=40% \
       --reverse \
       --prompt='TermSense > ' \
-      --query="$__TERMSENSE_TOKEN_PREFIX" \
+      --query="$prefix" \
       --select-1 \
       --exit-0)"
   else
@@ -257,6 +266,7 @@ _termsense_ctrl_space() {
       printf '%2d  %s\n' "$((i + 1))" "${candidates[i]}" >&2
     done
     printf 'TermSense choice [1-%d, Enter to cancel]: ' "$max" >&2
+
     local choice
     IFS= read -r choice
     if [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= max)); then
@@ -265,21 +275,19 @@ _termsense_ctrl_space() {
   fi
 
   if [[ -n "$selected" ]]; then
-    local right="${READLINE_LINE:READLINE_POINT}"
-    local left="${READLINE_LINE:0:__TERMSENSE_TOKEN_START}"
+    local left="${READLINE_LINE:0:replace_start}"
+    local right="${READLINE_LINE:replace_end}"
     READLINE_LINE="${left}${selected}${right}"
-    READLINE_POINT=$((__TERMSENSE_TOKEN_START + ${#selected}))
+    READLINE_POINT=$((replace_start + ${#selected}))
   fi
 
-  __TERMSENSE_CANDIDATES=()
-  __TERMSENSE_SELECTED=0
+  _termsense_reset_state
   _termsense_restore_navigation
 }
 
 _termsense_prompt_cleanup() {
   _termsense_clear_overlay
-  __TERMSENSE_CANDIDATES=()
-  __TERMSENSE_SELECTED=0
+  _termsense_reset_state
   _termsense_restore_navigation
 }
 
@@ -288,16 +296,14 @@ bind -x '"\C-x\C-t":_termsense_refresh'
 
 # Preserve native Readline insertion, then refresh TermSense. The quoted-insert
 # prefix makes the literal byte bypass its own macro binding and avoids a
-# recursive key mapping. ASCII printable input is covered in this first Bash
-# renderer; non-ASCII input remains native Readline input and can still use
-# Ctrl+Space explicitly.
+# recursive key mapping.
 for __termsense_code in $(seq 32 126); do
   printf -v __termsense_hex '%02x' "$__termsense_code"
   bind "\"\\x${__termsense_hex}\": \"\\C-v\\x${__termsense_hex}\\C-x\\C-t\"" 2>/dev/null || true
 done
 unset __termsense_code __termsense_hex
 
-# Backspace/Delete need a refresh after Readline mutates the buffer.
+# Backspace/Delete refresh after Readline mutates the buffer.
 bind '"\C-x\C-b": backward-delete-char'
 bind '"\C-h": "\C-x\C-b\C-x\C-t"'
 bind '"\C-?": "\C-x\C-b\C-x\C-t"'
@@ -306,8 +312,8 @@ bind '"\C-?": "\C-x\C-b\C-x\C-t"'
 bind -x '"\C- ":_termsense_ctrl_space'
 bind -x '"\C-@":_termsense_ctrl_space'
 
-# Clear stale overlays whenever Bash is about to show a fresh prompt without
-# discarding an existing scalar or array PROMPT_COMMAND configuration.
+# Clear stale overlays before a fresh prompt while preserving existing
+# PROMPT_COMMAND configuration.
 if declare -p PROMPT_COMMAND 2>/dev/null | grep -q '^declare -a'; then
   __termsense_prompt_found=0
   for __termsense_prompt_item in "${PROMPT_COMMAND[@]}"; do
