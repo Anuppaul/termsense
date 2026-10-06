@@ -14,6 +14,7 @@ require() {
 }
 
 [[ "$(uname -s)" == "Linux" ]] || fail "TermSense release checks require Linux"
+(( BASH_VERSINFO[0] >= 5 )) || fail "TermSense release checks require Bash 5.0 or newer"
 
 for cmd in cargo rustc bash awk grep git dpkg-deb find; do
   require "$cmd"
