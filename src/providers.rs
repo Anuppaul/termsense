@@ -1,6 +1,6 @@
 use crate::{
     apt_cache,
-    shell_parse::{quote_candidate, tokens_before_cursor, Token},
+    shell_parse::{active_segment_tokens, quote_candidate, Token},
     usage::UsageState,
     CommandEntry,
 };
@@ -234,7 +234,7 @@ pub(crate) fn suggest(
         return Vec::new();
     }
 
-    let tokens = tokens_before_cursor(buffer, cursor);
+    let tokens = active_segment_tokens(buffer, cursor);
     if tokens.is_empty() {
         return Vec::new();
     }
@@ -1446,7 +1446,7 @@ fn run_bounded(program: &str, args: &[&str], timeout_ms: u64) -> Option<String> 
 mod tests {
     use super::{completed_line, directory_query, score_prefix, sudo_nested_command_index};
     use crate::{
-        shell_parse::tokens_before_cursor,
+        shell_parse::{active_segment_tokens, tokens_before_cursor},
         usage::UsageState,
     };
 
@@ -1569,5 +1569,37 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "which docker"));
+    }
+
+    #[test]
+    fn pipeline_routes_to_right_hand_command() {
+        let commands = vec![crate::CommandEntry {
+            name: "grep".to_owned(),
+            path: std::path::PathBuf::from("/usr/bin/grep"),
+        }];
+        let input = "cat file | gre";
+        let candidates =
+            super::suggest(&commands, &UsageState::default(), input, input.len(), 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "cat file | grep"));
+    }
+
+    #[test]
+    fn separator_routes_to_right_hand_context() {
+        let input = "git status && docker lo";
+        let candidates =
+            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "git status && docker logs"));
+    }
+
+    #[test]
+    fn pipeline_quotes_are_not_boundaries() {
+        let input = "grep \"a|b\" --r";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens[0].text, "grep");
+        assert_eq!(tokens[1].text, "a|b");
     }
 }
