@@ -1,5 +1,6 @@
 use crate::{
     apt_cache,
+    runtime_cache,
     shell_parse::{active_context, quote_candidate, Token},
     usage::UsageState,
     CommandEntry,
@@ -7,6 +8,7 @@ use crate::{
 use std::{
     collections::BTreeSet,
     env, fs,
+    hash::{Hash, Hasher},
     io::Read,
     path::PathBuf,
     process::{Command, Stdio},
@@ -550,34 +552,18 @@ fn add_git_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Toke
     }
 
     if tokens.len() == 3 && GIT_REF_COMMANDS.contains(&subcommand) {
-        if let Some(output) = run_bounded(
-            "git",
-            &[
-                "for-each-ref",
-                "--format=%(refname:short)",
-                "refs/heads",
-                "refs/remotes",
-                "refs/tags",
-            ],
-            180,
-        ) {
-            for line in output.lines().map(str::trim).filter(|line| !line.is_empty()) {
-                if line.ends_with("/HEAD") {
-                    continue;
-                }
-
-                push_match(
-                    out,
-                    line,
-                    line,
-                    &current.text,
-                    "git-ref",
-                    "git-local",
-                    current.start,
-                    current.end,
-                    700,
-                );
-            }
+        for reference in git_refs() {
+            push_match(
+                out,
+                &reference,
+                &reference,
+                &current.text,
+                "git-ref",
+                "git-local",
+                current.start,
+                current.end,
+                700,
+            );
         }
     }
 }
@@ -657,20 +643,18 @@ fn add_docker_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &T
     }
 
     if tokens.len() == 3 && DOCKER_CONTAINER_COMMANDS.contains(&subcommand) {
-        if let Some(output) = run_bounded("docker", &["ps", "-a", "--format", "{{.Names}}"], 220) {
-            for name in output.lines().map(str::trim).filter(|line| !line.is_empty()) {
-                push_match(
-                    out,
-                    name,
-                    name,
-                    &current.text,
-                    "container",
-                    "docker-local",
-                    current.start,
-                    current.end,
-                    700,
-                );
-            }
+        for name in docker_container_names() {
+            push_match(
+                out,
+                &name,
+                &name,
+                &current.text,
+                "container",
+                "docker-local",
+                current.start,
+                current.end,
+                700,
+            );
         }
     }
 }
@@ -1321,7 +1305,70 @@ fn parse_known_hosts(path: &PathBuf, hosts: &mut BTreeSet<String>) {
     }
 }
 
+fn git_refs() -> Vec<String> {
+    let cwd = env::current_dir().unwrap_or_default();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    cwd.hash(&mut hasher);
+    let key = format!("git-refs-v1-{:x}", hasher.finish());
+
+    if let Some(cached) = runtime_cache::load_lines(&key, Duration::from_secs(2)) {
+        return cached;
+    }
+
+    let Some(output) = run_bounded(
+        "git",
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)",
+            "refs/heads",
+            "refs/remotes",
+            "refs/tags",
+        ],
+        160,
+    ) else {
+        return Vec::new();
+    };
+
+    let mut refs = BTreeSet::new();
+    for line in output.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        if !line.ends_with("/HEAD") {
+            refs.insert(line.to_owned());
+        }
+    }
+
+    let values: Vec<String> = refs.into_iter().collect();
+    runtime_cache::store_lines(&key, &values);
+    values
+}
+
+fn docker_container_names() -> Vec<String> {
+    if let Some(cached) =
+        runtime_cache::load_lines("docker-containers-v1", Duration::from_secs(2))
+    {
+        return cached;
+    }
+
+    let Some(output) = run_bounded("docker", &["ps", "-a", "--format", "{{.Names}}"], 160) else {
+        return Vec::new();
+    };
+
+    let mut names = BTreeSet::new();
+    for name in output.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        names.insert(name.to_owned());
+    }
+
+    let values: Vec<String> = names.into_iter().collect();
+    runtime_cache::store_lines("docker-containers-v1", &values);
+    values
+}
+
 fn systemd_units() -> Vec<String> {
+    if let Some(cached) =
+        runtime_cache::load_lines("systemd-units-v1", Duration::from_secs(10))
+    {
+        return cached;
+    }
+
     const DIRS: &[&str] = &[
         "/etc/systemd/system",
         "/run/systemd/system",
@@ -1348,7 +1395,9 @@ fn systemd_units() -> Vec<String> {
         }
     }
 
-    units.into_iter().collect()
+    let values: Vec<String> = units.into_iter().collect();
+    runtime_cache::store_lines("systemd-units-v1", &values);
+    values
 }
 
 fn is_unit_name(name: &str) -> bool {
