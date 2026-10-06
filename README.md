@@ -490,7 +490,7 @@ Default:
 
 ```text
 auto_suggest=1
-max_visible=5
+max_visible=20
 ghost=1
 ctrl_space=1
 ```
@@ -506,7 +506,7 @@ export TERMSENSE_GHOST=0
 export TERMSENSE_CTRL_SPACE=1
 ```
 
-`max_visible` is clamped to 1–20. Set `ctrl_space=0` to leave Ctrl+Space unbound by TermSense.
+`max_visible` defaults to 20 and is clamped to 1–20. Set `ctrl_space=0` to leave Ctrl+Space unbound by TermSense.
 
 ## Engine examples
 
