@@ -1,5 +1,6 @@
 mod apt_cache;
 mod providers;
+mod shell_parse;
 mod usage;
 
 use clap::{Parser, Subcommand};
@@ -177,7 +178,7 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("platform: linux");
             println!("engine: local");
             println!("commands indexed: {}", index.commands.len());
-            println!("context providers: git, systemd, docker, filesystem, ssh, apt, project manifests");
+            println!("context providers: shell, git, systemd, docker, filesystem, ssh, apt, project manifests");
             println!("network required: no");
             if let Some(path) = cache_path() {
                 println!("command cache: {}", path.display());
