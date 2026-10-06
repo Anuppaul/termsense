@@ -165,14 +165,19 @@ XDG_CONFIG_HOME="$tmp/home/.config" \
 XDG_CACHE_HOME="$tmp/home/.cache" \
 XDG_STATE_HOME="$tmp/home/.local/state" \
 TERMSENSE_SKIP_BUILD=1 \
+PATH="/usr/bin:/bin" \
 bash scripts/install.sh \
   --prefix "$tmp/prefix" \
-  --bashrc "$tmp/bashrc" >/dev/null
+  --bashrc "$tmp/bashrc" > "$tmp/install-off-path.txt"
 
 [[ -x "$tmp/prefix/bin/termsense" ]] || fail "installer did not install binary"
 [[ -f "$tmp/home/.config/termsense/config.conf" ]] || fail "installer did not create config"
 grep -q '^# >>> termsense >>>$' "$tmp/bashrc" || fail "installer did not add managed Bash block"
 grep -q '^TERMSENSE_BIN=' "$tmp/bashrc" || fail "installer did not pin installed binary"
+grep -Fq "$tmp/prefix/bin is not on your PATH yet." "$tmp/install-off-path.txt" \
+  || fail "installer did not warn when prefix/bin is outside PATH"
+grep -Fq "export PATH=$tmp/prefix/bin:"'\$PATH' "$tmp/install-off-path.txt" \
+  || fail "installer did not show the custom prefix PATH command"
 
 installed_lookup="$(
   HOME="$tmp/home" \
@@ -182,6 +187,19 @@ installed_lookup="$(
 )"
 [[ "$installed_lookup" == "$tmp/prefix/bin/termsense" ]] \
   || fail "user-local binary lookup fails when prefix/bin is outside PATH"
+
+HOME="$tmp/home" \
+XDG_CONFIG_HOME="$tmp/home/.config" \
+XDG_CACHE_HOME="$tmp/home/.cache" \
+XDG_STATE_HOME="$tmp/home/.local/state" \
+TERMSENSE_SKIP_BUILD=1 \
+PATH="$tmp/prefix/bin:/usr/bin:/bin" \
+bash scripts/install.sh \
+  --prefix "$tmp/prefix" \
+  --bashrc "$tmp/bashrc" > "$tmp/install-on-path.txt"
+
+! grep -Fq "is not on your PATH yet." "$tmp/install-on-path.txt" \
+  || fail "installer warned even though prefix/bin is already on PATH"
 
 HOME="$tmp/home" \
 XDG_CONFIG_HOME="$tmp/home/.config" \

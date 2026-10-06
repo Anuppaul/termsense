@@ -82,6 +82,21 @@ binary="$bin_dir/termsense"
 mkdir -p "$bin_dir"
 install -m 0755 target/release/termsense "$binary"
 
+_termsense_path_contains() {
+  local needle="$1"
+  local entry
+  IFS=: read -r -a _termsense_path_entries <<< "${PATH:-}"
+  for entry in "${_termsense_path_entries[@]}"; do
+    [[ "$entry" == "$needle" ]] && return 0
+  done
+  return 1
+}
+
+bin_dir_on_path=0
+if _termsense_path_contains "$bin_dir"; then
+  bin_dir_on_path=1
+fi
+
 config_root="${XDG_CONFIG_HOME:-$HOME/.config}/termsense"
 config_file="$config_root/config.conf"
 mkdir -p "$config_root"
@@ -161,6 +176,10 @@ EOF
   printf '\n'
   if (( enable_shell )); then
     printf '  %sOpen a new Bash shell or run:%s source %q\n' "$dim" "$reset" "$bashrc"
+  fi
+  if (( ! bin_dir_on_path )); then
+    printf '  %sNote:%s %s is not on your PATH yet.\n' "$bold" "$reset" "$bin_dir"
+    printf '  To run termsense directly, add it with: export PATH=%q:\$PATH\n' "$bin_dir"
   fi
   printf '\n'
 }
