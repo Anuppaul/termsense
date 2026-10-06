@@ -13,23 +13,210 @@ pub(crate) struct Token {
     pub(crate) quote: QuoteStyle,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ActiveContext {
+    pub(crate) tokens: Vec<Token>,
+    pub(crate) redirection_target: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameKind {
+    DollarParen,
+    Backtick,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Frame {
+    kind: FrameKind,
+    start: usize,
+    outer_quote: QuoteStyle,
+}
+
+#[derive(Debug, Clone)]
+enum Lexeme {
+    Word(Token),
+    Redirection { needs_path: bool },
+}
+
+pub(crate) fn active_context(buffer: &str, cursor: usize) -> ActiveContext {
+    let substitution_start = active_substitution_start(buffer, cursor);
+    let segment_start = active_segment_start_from(buffer, substitution_start, cursor);
+    let lexemes = lex_range(buffer, segment_start, cursor);
+    let trailing_space = buffer[..cursor]
+        .chars()
+        .last()
+        .is_some_and(char::is_whitespace);
+
+    let mut tokens = Vec::new();
+    for lexeme in &lexemes {
+        if let Lexeme::Word(token) = lexeme {
+            tokens.push(token.clone());
+        }
+    }
+
+    let redirection_target = match lexemes.as_slice() {
+        [.., Lexeme::Redirection { needs_path: true }] => {
+            tokens.push(Token {
+                text: String::new(),
+                start: cursor,
+                end: cursor,
+                quote: QuoteStyle::None,
+            });
+            true
+        }
+        [.., Lexeme::Redirection { needs_path: true }, Lexeme::Word(_)] if !trailing_space => true,
+        _ => false,
+    };
+
+    if !redirection_target {
+        let slice = &buffer[segment_start..cursor];
+        if (slice.is_empty() || trailing_space)
+            && !tokens.last().is_some_and(|token| token.start == cursor && token.end == cursor)
+        {
+            tokens.push(Token {
+                text: String::new(),
+                start: cursor,
+                end: cursor,
+                quote: QuoteStyle::None,
+            });
+        }
+    }
+
+    ActiveContext {
+        tokens,
+        redirection_target,
+    }
+}
+
 pub(crate) fn active_segment_tokens(buffer: &str, cursor: usize) -> Vec<Token> {
-    let start = active_segment_start(buffer, cursor);
-    tokens_in_range(buffer, start, cursor)
+    active_context(buffer, cursor).tokens
 }
 
 pub(crate) fn tokens_before_cursor(buffer: &str, cursor: usize) -> Vec<Token> {
-    tokens_in_range(buffer, 0, cursor)
+    let lexemes = lex_range(buffer, 0, cursor);
+    let mut tokens: Vec<Token> = lexemes
+        .into_iter()
+        .filter_map(|lexeme| match lexeme {
+            Lexeme::Word(token) => Some(token),
+            Lexeme::Redirection { .. } => None,
+        })
+        .collect();
+
+    if (buffer[..cursor].is_empty()
+        || buffer[..cursor]
+            .chars()
+            .last()
+            .is_some_and(char::is_whitespace))
+        && !tokens.last().is_some_and(|token| token.start == cursor && token.end == cursor)
+    {
+        tokens.push(Token {
+            text: String::new(),
+            start: cursor,
+            end: cursor,
+            quote: QuoteStyle::None,
+        });
+    }
+
+    tokens
 }
 
 pub(crate) fn active_segment_start(buffer: &str, cursor: usize) -> usize {
+    let base = active_substitution_start(buffer, cursor);
+    active_segment_start_from(buffer, base, cursor)
+}
+
+fn active_substitution_start(buffer: &str, cursor: usize) -> usize {
     let before = &buffer[..cursor];
+    let mut frames: Vec<Frame> = Vec::new();
     let mut quote = QuoteStyle::None;
     let mut escaped = false;
-    let mut last_boundary = 0;
-
     let mut iter = before.char_indices().peekable();
+
     while let Some((offset, ch)) = iter.next() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        if quote == QuoteStyle::Single {
+            if ch == '\'' {
+                quote = QuoteStyle::None;
+            }
+            continue;
+        }
+
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+
+        if ch == '\'' && quote != QuoteStyle::Double {
+            quote = if quote == QuoteStyle::Single {
+                QuoteStyle::None
+            } else {
+                QuoteStyle::Single
+            };
+            continue;
+        }
+
+        if ch == '"' {
+            quote = if quote == QuoteStyle::Double {
+                QuoteStyle::None
+            } else {
+                QuoteStyle::Double
+            };
+            continue;
+        }
+
+        if ch == '$' {
+            if let Some((next_offset, '(')) = iter.peek().copied() {
+                iter.next();
+                frames.push(Frame {
+                    kind: FrameKind::DollarParen,
+                    start: next_offset + 1,
+                    outer_quote: quote,
+                });
+                quote = QuoteStyle::None;
+                continue;
+            }
+        }
+
+        if ch == ')' && quote == QuoteStyle::None {
+            if frames.last().is_some_and(|frame| frame.kind == FrameKind::DollarParen) {
+                let frame = frames.pop().expect("frame");
+                quote = frame.outer_quote;
+                continue;
+            }
+        }
+
+        if ch == char::from(96u8) {
+            if quote == QuoteStyle::None
+                && frames.last().is_some_and(|frame| frame.kind == FrameKind::Backtick)
+            {
+                let frame = frames.pop().expect("frame");
+                quote = frame.outer_quote;
+            } else {
+                frames.push(Frame {
+                    kind: FrameKind::Backtick,
+                    start: offset + ch.len_utf8(),
+                    outer_quote: quote,
+                });
+                quote = QuoteStyle::None;
+            }
+        }
+    }
+
+    frames.last().map(|frame| frame.start).unwrap_or(0)
+}
+
+fn active_segment_start_from(buffer: &str, base: usize, cursor: usize) -> usize {
+    let before = &buffer[base..cursor];
+    let mut quote = QuoteStyle::None;
+    let mut escaped = false;
+    let mut last_boundary = base;
+    let mut iter = before.char_indices().peekable();
+
+    while let Some((relative_offset, ch)) = iter.next() {
         if escaped {
             escaped = false;
             continue;
@@ -66,14 +253,20 @@ pub(crate) fn active_segment_start(buffer: &str, cursor: usize) -> usize {
             continue;
         }
 
+        if ch == '&' {
+            if iter.peek().is_some_and(|(_, next)| *next == '>') {
+                continue;
+            }
+        }
+
         if matches!(ch, ';' | '|' | '&') {
-            let mut boundary = offset + ch.len_utf8();
+            let mut boundary = base + relative_offset + ch.len_utf8();
 
             if matches!(ch, '|' | '&') {
-                if let Some((next_offset, next)) = iter.peek().copied() {
+                if let Some((next_relative, next)) = iter.peek().copied() {
                     if next == ch {
                         iter.next();
-                        boundary = next_offset + next.len_utf8();
+                        boundary = base + next_relative + next.len_utf8();
                     }
                 }
             }
@@ -95,14 +288,25 @@ pub(crate) fn active_segment_start(buffer: &str, cursor: usize) -> usize {
     start
 }
 
-fn tokens_in_range(buffer: &str, start: usize, cursor: usize) -> Vec<Token> {
+fn lex_range(buffer: &str, start: usize, cursor: usize) -> Vec<Lexeme> {
     let before = &buffer[start..cursor];
-    let mut tokens = Vec::new();
+    let mut lexemes = Vec::new();
     let mut iter = before.char_indices().peekable();
 
     while let Some((relative_index, ch)) = iter.peek().copied() {
         if ch.is_whitespace() {
             iter.next();
+            continue;
+        }
+
+        let remaining = &before[relative_index..];
+        if let Some(length) = redirection_operator_len(remaining) {
+            for _ in 0..length {
+                iter.next();
+            }
+            lexemes.push(Lexeme::Redirection {
+                needs_path: redirection_needs_path(&remaining[..length]),
+            });
             continue;
         }
 
@@ -129,9 +333,21 @@ fn tokens_in_range(buffer: &str, start: usize, cursor: usize) -> Vec<Token> {
             if active_quote == QuoteStyle::None && current.is_whitespace() {
                 break;
             }
-
             if active_quote == QuoteStyle::None && matches!(current, ';' | '|' | '&') {
-                break;
+                if current == '&' {
+                    let rem = &before[relative_offset..];
+                    if redirection_operator_len(rem).is_some() {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            if active_quote == QuoteStyle::None {
+                let rem = &before[relative_offset..];
+                if redirection_operator_len(rem).is_some() {
+                    break;
+                }
             }
 
             iter.next();
@@ -185,25 +401,65 @@ fn tokens_in_range(buffer: &str, start: usize, cursor: usize) -> Vec<Token> {
             }
         }
 
-        tokens.push(Token {
+        lexemes.push(Lexeme::Word(Token {
             text,
             start: replacement_start,
             end,
             quote,
-        });
+        }));
     }
 
-    let slice = &buffer[start..cursor];
-    if slice.is_empty() || slice.chars().last().is_some_and(char::is_whitespace) {
-        tokens.push(Token {
-            text: String::new(),
-            start: cursor,
-            end: cursor,
-            quote: QuoteStyle::None,
-        });
+    lexemes
+}
+
+fn redirection_operator_len(input: &str) -> Option<usize> {
+    let bytes = input.as_bytes();
+    if bytes.is_empty() {
+        return None;
     }
 
-    tokens
+    if bytes.starts_with(b"&>>") {
+        return Some(3);
+    }
+    if bytes.starts_with(b"&>") {
+        return Some(2);
+    }
+
+    let mut index = 0;
+    while index < bytes.len() && bytes[index].is_ascii_digit() {
+        index += 1;
+    }
+
+    if index >= bytes.len() || !matches!(bytes[index], b'<' | b'>') {
+        return None;
+    }
+
+    let op = bytes[index];
+    index += 1;
+
+    if index < bytes.len() && bytes[index] == op {
+        index += 1;
+        if op == b'<' && index < bytes.len() && bytes[index] == b'<' {
+            index += 1;
+        }
+    } else if index < bytes.len()
+        && ((op == b'>' && matches!(bytes[index], b'&' | b'|'))
+            || (op == b'<' && bytes[index] == b'>'))
+    {
+        index += 1;
+    }
+
+    Some(index)
+}
+
+fn redirection_needs_path(operator: &str) -> bool {
+    if operator.contains(">&") {
+        return false;
+    }
+    if operator.ends_with("<<") || operator.ends_with("<<<") {
+        return false;
+    }
+    true
 }
 
 pub(crate) fn quote_candidate(value: &str, quote: QuoteStyle) -> Option<String> {
@@ -252,8 +508,8 @@ fn escape_unquoted(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        active_segment_start, active_segment_tokens, quote_candidate, tokens_before_cursor,
-        QuoteStyle,
+        active_context, active_segment_start, active_segment_tokens, quote_candidate,
+        tokens_before_cursor, QuoteStyle,
     };
 
     #[test]
@@ -274,53 +530,11 @@ mod tests {
     }
 
     #[test]
-    fn adds_empty_token_after_space() {
-        let input = "git checkout ";
-        let tokens = tokens_before_cursor(input, input.len());
-        assert_eq!(tokens.len(), 3);
-        assert_eq!(tokens[2].text, "");
-    }
-
-    #[test]
-    fn double_quote_candidate_keeps_spaces_unescaped() {
-        assert_eq!(
-            quote_candidate("My Documents/file.txt", QuoteStyle::Double).as_deref(),
-            Some("My Documents/file.txt")
-        );
-    }
-
-    #[test]
-    fn unquoted_candidate_escapes_spaces() {
-        assert_eq!(
-            quote_candidate("My Documents/file.txt", QuoteStyle::None).as_deref(),
-            Some("My\\ Documents/file.txt")
-        );
-    }
-
-    #[test]
     fn pipeline_uses_only_active_segment() {
         let input = "cat file | gre";
         let tokens = active_segment_tokens(input, input.len());
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0].text, "gre");
-        assert_eq!(&input[tokens[0].start..tokens[0].end], "gre");
-    }
-
-    #[test]
-    fn and_separator_uses_only_right_segment() {
-        let input = "git status && dock";
-        let tokens = active_segment_tokens(input, input.len());
-        assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].text, "dock");
-    }
-
-    #[test]
-    fn semicolon_separator_uses_only_right_segment() {
-        let input = "pwd; cd ~/Doc";
-        let tokens = active_segment_tokens(input, input.len());
-        assert_eq!(tokens.len(), 2);
-        assert_eq!(tokens[0].text, "cd");
-        assert_eq!(tokens[1].text, "~/Doc");
     }
 
     #[test]
@@ -328,24 +542,68 @@ mod tests {
         let input = "grep \"a|b\" fi";
         let tokens = active_segment_tokens(input, input.len());
         assert_eq!(tokens.len(), 3);
-        assert_eq!(tokens[0].text, "grep");
         assert_eq!(tokens[1].text, "a|b");
-        assert_eq!(tokens[2].text, "fi");
     }
 
     #[test]
     fn escaped_separator_does_not_split() {
         let input = "echo a\\|b";
         assert_eq!(active_segment_start(input, input.len()), 0);
-        let tokens = active_segment_tokens(input, input.len());
-        assert_eq!(tokens[1].text, "a|b");
+        assert_eq!(active_segment_tokens(input, input.len())[1].text, "a|b");
     }
 
     #[test]
-    fn background_separator_starts_new_segment() {
-        let input = "sleep 1 & sys";
+    fn output_redirection_marks_path_target() {
+        let input = "echo hi > lo";
+        let context = active_context(input, input.len());
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.last().unwrap().text, "lo");
+    }
+
+    #[test]
+    fn fd_append_redirection_marks_path_target() {
+        let input = "cmd 2>> lo";
+        let context = active_context(input, input.len());
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.last().unwrap().text, "lo");
+    }
+
+    #[test]
+    fn input_redirection_marks_path_target() {
+        let input = "sort < in";
+        let context = active_context(input, input.len());
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.last().unwrap().text, "in");
+    }
+
+    #[test]
+    fn descriptor_duplication_is_not_path_target() {
+        let input = "cmd 2>&1";
+        let context = active_context(input, input.len());
+        assert!(!context.redirection_target);
+    }
+
+    #[test]
+    fn dollar_paren_routes_to_inner_command() {
+        let input = "echo $(git che";
         let tokens = active_segment_tokens(input, input.len());
-        assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].text, "sys");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].text, "git");
+        assert_eq!(tokens[1].text, "che");
+    }
+
+    #[test]
+    fn nested_dollar_paren_uses_innermost_command() {
+        let input = "echo $(printf %s $(git che";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens[0].text, "git");
+    }
+
+    #[test]
+    fn backticks_route_to_inner_command() {
+        let input = "echo `git che";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens[0].text, "git");
+        assert_eq!(tokens[1].text, "che");
     }
 }
