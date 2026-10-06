@@ -269,10 +269,13 @@ fn doctor() -> Result<(), String> {
         }
     }
 
-    if env::var("BASH_VERSION").is_ok() {
-        println!("  Bash: detected");
+    let shell = env::var("SHELL").unwrap_or_default();
+    if shell.ends_with("/bash") || shell == "bash" {
+        println!("  shell: Bash configured ({shell})");
+    } else if shell.is_empty() {
+        println!("  shell: unknown (SHELL is unset)");
     } else {
-        println!("  Bash: not detected in this process (shell integration still available)");
+        println!("  shell: {shell} (Bash adapter remains available)");
     }
 
     Ok(())
