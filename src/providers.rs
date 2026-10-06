@@ -1630,6 +1630,10 @@ fn push_match(
     replacement_end: usize,
     boost: i64,
 ) {
+    if insert_text.chars().any(char::is_control) || match_text.chars().any(char::is_control) {
+        return;
+    }
+
     if let Some(score) = score_prefix(match_text, prefix) {
         out.push(Candidate {
             insert_text: insert_text.to_owned(),
@@ -1886,6 +1890,23 @@ mod tests {
         let candidates = super::suggest(&[], &UsageState::default(), "curl --hea", 10, 20);
         assert!(candidates.iter().any(|candidate| candidate.display_text == "curl --head"));
         assert!(candidates.iter().any(|candidate| candidate.display_text == "curl --header"));
+    }
+
+    #[test]
+    fn control_char_candidates_are_rejected() {
+        let mut out = Vec::new();
+        super::push_match(
+            &mut out,
+            "bad\u{1b}name",
+            "bad\u{1b}name",
+            "bad",
+            "file",
+            "filesystem",
+            0,
+            3,
+            0,
+        );
+        assert!(out.is_empty());
     }
 
     #[test]
