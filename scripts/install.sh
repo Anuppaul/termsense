@@ -57,6 +57,11 @@ done
   exit 1
 }
 
+if (( enable_shell && BASH_VERSINFO[0] < 5 )); then
+  printf 'TermSense Bash integration requires Bash 5.0 or newer.\n' >&2
+  exit 1
+fi
+
 cd "$repo_root"
 
 if [[ "$skip_build" == "1" ]]; then
