@@ -56,7 +56,10 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - local Debian package builder for amd64/arm64;
 - filesystem completion for input/output redirection targets;
 - innermost command routing inside open $() and backtick command substitutions;
-- richer typed positional values for find/grep/tar/curl.
+- richer typed positional values for find/grep/tar/curl;
+- process-substitution and command-group context routing;
+- ephemeral runtime caching for expensive dynamic Git/Docker/systemd providers;
+- local release-readiness gate with Rust, Bash, binary-smoke and Debian-package checks.
 
 The complete product contract is in [docs/CONCEPT.md](docs/CONCEPT.md).
 
@@ -257,6 +260,24 @@ $ printf '%s' "$(docker lo
 $ echo `git che
     > echo `git checkout
 ```
+
+Process substitutions and open command groups also route to the innermost executable context:
+
+```text
+$ diff <(git che
+    > diff <(git checkout
+
+$ tee >(grep --r
+    > tee >(grep --recursive
+
+$ ( git che
+    > ( git checkout
+
+$ { docker lo
+    > { docker logs
+```
+
+Nested forms use the innermost active frame. Arithmetic expansion such as `$((1 + 2))` is deliberately not treated as command substitution.
 
 Richer positional models distinguish option values from ordinary paths:
 
@@ -472,6 +493,8 @@ Force refresh after package installation:
 termsense index
 ```
 
+A manual `termsense index` also clears short-lived dynamic provider cache entries so Git refs, Docker containers and systemd units are refreshed immediately.
+
 ## Index behavior
 
 The base index records executable commands reachable through the current `PATH`.
@@ -489,6 +512,22 @@ or, when `XDG_CACHE_HOME` is unset:
 ```
 
 TermSense fingerprints PATH directories before reusing the cache, so ordinary package installs/removals can invalidate it without rescanning every directory on every keystroke.
+
+Dynamic providers use a separate **ephemeral runtime cache** only when `$XDG_RUNTIME_DIR` exists:
+
+```text
+$XDG_RUNTIME_DIR/termsense/
+```
+
+Current TTLs are intentionally short:
+
+```text
+Git refs          ~2 seconds
+Docker containers ~2 seconds
+systemd units     ~10 seconds
+```
+
+This cache is session-scoped and is not used as adaptive history. Sensitive dynamic values are not copied into the persistent ranking state. If no XDG runtime directory exists, TermSense simply runs those providers without this cache.
 
 ## Safety and privacy
 
@@ -587,7 +626,7 @@ The automatic renderer hooks ASCII printable keystrokes through Readline macros 
 
 The parser now understands open single/double quotes, backslash-escaped characters, active segments separated by `|`, `&&`, `||`, `;`, or background `&`, common file redirections, and open `$(...)` / backtick command substitutions. Separator characters inside quotes or escaped separators do not split the active context.
 
-It is still deliberately not a full Bash AST. Heredoc bodies, grouping/subshell execution semantics, process substitution, arithmetic expansion, every redirection edge case, and complete compound-shell grammar remain future parser work.
+It is still deliberately not a full Bash AST. Heredoc bodies, closed-group execution semantics, arithmetic expansion semantics, every process/redirection edge case, and complete compound-shell grammar remain future parser work.
 
 Multiline redraw hardening and broader shell/keymap compatibility also remain active implementation work.
 
@@ -595,10 +634,10 @@ Multiline redraw hardening and broader shell/keymap compatibility also remain ac
 
 The next provider work extends the same generic context model with:
 
-- process substitution, grouping and richer compound-shell parsing;
+- heredoc and richer closed-group/compound-shell semantics;
 - more option-value schemas and positional argument models;
 - SSH Include-file expansion and additional safe local host sources;
-- short-lived caches for more expensive dynamic providers;
+- additional provider cache invalidation signals beyond short TTLs;
 - additional safe project manifests and task runners;
 - ranking decay/recency without storing raw shell history;
 - reproducible release metadata and signed package publishing.
@@ -607,16 +646,19 @@ The next provider work extends the same generic context model with:
 
 No GitHub Actions workflow is used.
 
-Run development checks locally:
+Fast local checks:
 
 ```bash
-cargo fmt --check
-cargo test
-bash -n shell/termsense.bash
-bash -n scripts/install.sh
-bash -n scripts/uninstall.sh
-bash -n scripts/package-deb.sh
+bash scripts/check-local.sh
 ```
+
+Full release-readiness gate:
+
+```bash
+bash scripts/release-readiness.sh
+```
+
+The release gate verifies package identity/version/license, forbids workflow files under the current no-CI policy, runs rustfmt/tests/release build, checks all Bash scripts, smoke-tests contextual suggestions, generates Bash integration and syntax-checks it, builds a temporary Debian package, and verifies its package/version metadata.
 
 ## CI policy
 
