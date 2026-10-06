@@ -219,7 +219,9 @@ score =
 
 Ranking must be deterministic for identical local state.
 
-Later versions may add typo tolerance and learned local ranking, but exact/prefix behavior remains predictable.
+Accepted suggestions may contribute a bounded local usage boost. TermSense stores only derived candidate keys by default, not raw shell history or complete command lines. Usage weighting must never overpower exact textual matches.
+
+Later versions may add typo tolerance and recency/decay, but exact/prefix behavior remains predictable.
 
 ## 7. Architecture
 
