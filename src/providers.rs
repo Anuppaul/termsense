@@ -219,6 +219,10 @@ const CURL_OPTIONS: &[&str] = &[
     "-v",
 ];
 
+const COMMAND_LOOKUP_OPTIONS: &[&str] = &[
+    "--all", "--help", "--version", "-a", "-v", "-V",
+];
+
 pub(crate) fn suggest(
     commands: &[CommandEntry],
     usage: &UsageState,
@@ -296,6 +300,9 @@ pub(crate) fn suggest(
         "grep" | "egrep" | "fgrep" => add_grep_candidates(&mut candidates, effective, current),
         "tar" => add_tar_candidates(&mut candidates, effective, current),
         "curl" => add_curl_candidates(&mut candidates, effective, current),
+        "which" | "whereis" | "type" | "command" | "man" => {
+            add_command_lookup_candidates(&mut candidates, commands, effective, current)
+        }
         command if FILESYSTEM_COMMANDS.contains(&command) => {
             add_filesystem_candidates(&mut candidates, current, false)
         }
@@ -932,6 +939,27 @@ fn add_curl_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Tok
     }
 }
 
+fn add_command_lookup_candidates(
+    out: &mut Vec<Candidate>,
+    commands: &[CommandEntry],
+    _tokens: &[Token],
+    current: &Token,
+) {
+    if current.text.starts_with('-') {
+        add_static(
+            out,
+            COMMAND_LOOKUP_OPTIONS,
+            current,
+            "option",
+            "command-lookup-schema",
+            600,
+        );
+        return;
+    }
+
+    add_command_candidates(out, commands, current);
+}
+
 fn package_scripts() -> Vec<String> {
     let Some(path) = find_upwards("package.json") else {
         return Vec::new();
@@ -1304,7 +1332,8 @@ fn usage_key_for(source: &str, kind: &str, insert_text: &str) -> String {
         | "find-schema"
         | "grep-schema"
         | "tar-schema"
-        | "curl-schema" => format!("{source}:{kind}:{insert_text}"),
+        | "curl-schema"
+        | "command-lookup-schema" => format!("{source}:{kind}:{insert_text}"),
         _ => String::new(),
     }
 }
@@ -1527,5 +1556,18 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "sudo -H git checkout"));
+    }
+
+    #[test]
+    fn command_lookup_uses_installed_command_pool() {
+        let commands = vec![crate::CommandEntry {
+            name: "docker".to_owned(),
+            path: std::path::PathBuf::from("/usr/bin/docker"),
+        }];
+        let candidates =
+            super::suggest(&commands, &UsageState::default(), "which do", 8, 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "which docker"));
     }
 }
