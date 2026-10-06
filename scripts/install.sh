@@ -157,7 +157,7 @@ EOF
   printf '\n'
   printf '  %sStart typing%s      live suggestions\n' "$bold" "$reset"
   printf '  %sCtrl+Space%s        browse all commands\n' "$bold" "$reset"
-  printf '  %sTab / →%s           accept suggestion\n' "$bold" "$reset"
+  printf '  %sTab / Enter / →%s   accept suggestion\n' "$bold" "$reset"
   printf '\n'
   if (( enable_shell )); then
     printf '  %sOpen a new Bash shell or run:%s source %q\n' "$dim" "$reset" "$bashrc"
