@@ -226,6 +226,14 @@ const COMMAND_LOOKUP_OPTIONS: &[&str] = &[
     "--all", "--help", "--version", "-a", "-v", "-V",
 ];
 
+const TERMSENSE_SUBCOMMANDS: &[&str] = &[
+    "doctor", "index", "init", "list-commands", "status", "suggest",
+];
+
+const TERMSENSE_SUGGEST_OPTIONS: &[&str] = &[
+    "--cursor", "--json", "--limit", "-n",
+];
+
 pub(crate) fn suggest(
     commands: &[CommandEntry],
     usage: &UsageState,
@@ -316,6 +324,7 @@ pub(crate) fn suggest(
         "which" | "whereis" | "type" | "command" | "man" => {
             add_command_lookup_candidates(&mut candidates, commands, effective, current)
         }
+        "termsense" => add_termsense_candidates(&mut candidates, effective, current),
         command if FILESYSTEM_COMMANDS.contains(&command) => {
             add_filesystem_candidates(&mut candidates, current, false)
         }
@@ -1020,6 +1029,40 @@ fn add_curl_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Tok
     }
 }
 
+fn add_termsense_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if tokens.len() == 2 {
+        add_static(
+            out,
+            TERMSENSE_SUBCOMMANDS,
+            current,
+            "subcommand",
+            "termsense-schema",
+            800,
+        );
+        return;
+    }
+
+    match tokens[1].text.as_str() {
+        "init" if tokens.len() == 3 => {
+            add_static(out, &["bash"], current, "argument-value", "termsense-schema", 800);
+        }
+        "suggest" if current.text.starts_with('-') => {
+            add_static(
+                out,
+                TERMSENSE_SUGGEST_OPTIONS,
+                current,
+                "option",
+                "termsense-schema",
+                800,
+            );
+        }
+        "list-commands" if current.text.starts_with('-') => {
+            add_static(out, &["--json"], current, "option", "termsense-schema", 800);
+        }
+        _ => {}
+    }
+}
+
 fn add_command_lookup_candidates(
     out: &mut Vec<Candidate>,
     commands: &[CommandEntry],
@@ -1626,7 +1669,8 @@ fn usage_key_for(source: &str, kind: &str, insert_text: &str) -> String {
         | "tar-schema"
         | "curl-schema"
         | "command-lookup-schema"
-        | "man-cache" => format!("{source}:{kind}:{insert_text}"),
+        | "man-cache"
+        | "termsense-schema" => format!("{source}:{kind}:{insert_text}"),
         _ => String::new(),
     }
 }
@@ -1872,6 +1916,23 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "which docker"));
+    }
+
+    #[test]
+    fn termsense_completes_its_own_cli() {
+        let input = "termsense st";
+        let candidates =
+            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "termsense status"));
+
+        let input = "termsense init b";
+        let candidates =
+            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "termsense init bash"));
     }
 
     #[test]
