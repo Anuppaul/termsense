@@ -237,6 +237,10 @@ pub(crate) fn suggest(
     }
 
     let context = active_context(buffer, cursor);
+    if context.suppress_suggestions {
+        return Vec::new();
+    }
+
     let tokens = context.tokens;
     if tokens.is_empty() {
         return Vec::new();
