@@ -166,7 +166,7 @@ printf 'version: %s\n' "$version"
 printf 'binary: %s\n' "$repo_root/target/release/termsense"
 printf 'deb: %s\n' "$deb_file"
  "$tmp/bashrc" || fail "installer did not add managed Bash block"
-grep -Fq 'TERMSENSE_BIN="' "$tmp/bashrc" || fail "installer did not pin installed binary"
+grep -q '^TERMSENSE_BIN=' "$tmp/bashrc" || fail "installer did not pin installed binary"
 
 installed_lookup="$(
   HOME="$tmp/home" \
