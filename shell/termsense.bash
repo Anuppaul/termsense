@@ -20,9 +20,19 @@ __TERMSENSE_REPLACE_END=0
 __TERMSENSE_PREFIX=""
 __TERMSENSE_CANDIDATES=()
 __TERMSENSE_DISPLAYS=()
+__TERMSENSE_USAGE_KEYS=()
 
 _termsense_binary() {
   command -v termsense 2>/dev/null
+}
+
+_termsense_record_usage() {
+  local usage_key="$1"
+  [[ -n "$usage_key" ]] || return 0
+
+  local ts
+  ts="$(_termsense_binary)" || return 0
+  "$ts" record "$usage_key" >/dev/null 2>&1 || true
 }
 
 _termsense_clear_overlay() {
@@ -66,6 +76,7 @@ _termsense_activate_navigation() {
 _termsense_reset_state() {
   __TERMSENSE_CANDIDATES=()
   __TERMSENSE_DISPLAYS=()
+  __TERMSENSE_USAGE_KEYS=()
   __TERMSENSE_SELECTED=0
   __TERMSENSE_REPLACE_START=$READLINE_POINT
   __TERMSENSE_REPLACE_END=$READLINE_POINT
@@ -83,12 +94,13 @@ _termsense_query() {
   ts="$(_termsense_binary)" || return 1
 
   _termsense_reset_state
-  local value display _kind _source _score start end first=1
+  local value display _kind _source _score start end usage_key first=1
 
-  while IFS=$'\t' read -r value display _kind _source _score start end; do
+  while IFS=$'\t' read -r value display _kind _source _score start end usage_key; do
     [[ -n "$value" ]] || continue
     __TERMSENSE_CANDIDATES+=("$value")
     __TERMSENSE_DISPLAYS+=("$display")
+    __TERMSENSE_USAGE_KEYS+=("$usage_key")
 
     if (( first )); then
       __TERMSENSE_REPLACE_START=$start
@@ -181,11 +193,13 @@ _termsense_accept_selected() {
   (( total > 0 )) || return 0
 
   local selected="${__TERMSENSE_CANDIDATES[__TERMSENSE_SELECTED]}"
+  local usage_key="${__TERMSENSE_USAGE_KEYS[__TERMSENSE_SELECTED]}"
   local left="${READLINE_LINE:0:__TERMSENSE_REPLACE_START}"
   local right="${READLINE_LINE:__TERMSENSE_REPLACE_END}"
 
   READLINE_LINE="${left}${selected}${right}"
   READLINE_POINT=$((__TERMSENSE_REPLACE_START + ${#selected}))
+  _termsense_record_usage "$usage_key"
   _termsense_dismiss
 }
 
@@ -234,16 +248,18 @@ _termsense_ctrl_space() {
 
   local -a candidates=()
   local -a displays=()
-  local value display _kind _source _score start end
+  local -a usage_keys=()
+  local value display _kind _source _score start end usage_key
   local replace_start=$READLINE_POINT
   local replace_end=$READLINE_POINT
   local prefix=""
   local first=1
 
-  while IFS=$'\t' read -r value display _kind _source _score start end; do
+  while IFS=$'\t' read -r value display _kind _source _score start end usage_key; do
     [[ -n "$value" ]] || continue
     candidates+=("$value")
     displays+=("$display")
+    usage_keys+=("$usage_key")
 
     if (( first )); then
       replace_start=$start
@@ -260,7 +276,9 @@ _termsense_ctrl_space() {
   }
 
   local selected=""
+  local selected_usage_key=""
   local i
+
   if command -v fzf >/dev/null 2>&1; then
     local selected_row selected_index
     selected_row="$(
@@ -272,6 +290,7 @@ _termsense_ctrl_space() {
     selected_index="${selected_row%%$'\t'*}"
     if [[ "$selected_index" =~ ^[0-9]+$ ]] && ((selected_index < ${#candidates[@]})); then
       selected="${candidates[selected_index]}"
+      selected_usage_key="${usage_keys[selected_index]}"
     fi
   else
     printf '\n' >&2
@@ -287,6 +306,7 @@ _termsense_ctrl_space() {
     IFS= read -r choice
     if [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= max)); then
       selected="${candidates[choice-1]}"
+      selected_usage_key="${usage_keys[choice-1]}"
     fi
   fi
 
@@ -295,6 +315,7 @@ _termsense_ctrl_space() {
     local right="${READLINE_LINE:replace_end}"
     READLINE_LINE="${left}${selected}${right}"
     READLINE_POINT=$((replace_start + ${#selected}))
+    _termsense_record_usage "$selected_usage_key"
   fi
 
   _termsense_reset_state
