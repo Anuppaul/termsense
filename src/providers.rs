@@ -131,14 +131,7 @@ pub(crate) fn suggest(
         "systemctl" => add_systemctl_candidates(&mut candidates, effective, current),
         "docker" => add_docker_candidates(&mut candidates, effective, current),
         "cd" => add_directory_candidates(&mut candidates, current),
-        "cargo" => add_static(
-            &mut candidates,
-            CARGO_SUBCOMMANDS,
-            current,
-            "subcommand",
-            "cargo-schema",
-            500,
-        ),
+        "cargo" => add_cargo_candidates(&mut candidates, effective, current),
         "pnpm" => add_package_manager_candidates(
             &mut candidates,
             effective,
@@ -351,6 +344,19 @@ fn add_docker_candidates(
                 );
             }
         }
+    }
+}
+
+fn add_cargo_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: Token<'_>) {
+    if tokens.len() == 2 {
+        add_static(
+            out,
+            CARGO_SUBCOMMANDS,
+            current,
+            "subcommand",
+            "cargo-schema",
+            500,
+        );
     }
 }
 
