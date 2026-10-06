@@ -54,8 +54,8 @@ impl UsageState {
             return 0;
         }
 
-        let capped = count.min(64);
-        120 * i64::try_from(capped).unwrap_or(64)
+        let capped = count.min(20);
+        80 * i64::try_from(capped).unwrap_or(20)
     }
 
     pub(crate) fn entries(&self) -> usize {
@@ -144,6 +144,6 @@ mod tests {
 
         assert!(state.boost("git") > state.boost("docker"));
         assert_eq!(state.boost("missing"), 0);
-        assert_eq!(state.boost("git"), 120 * 64);
+        assert_eq!(state.boost("git"), 80 * 20);
     }
 }
