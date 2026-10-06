@@ -160,7 +160,7 @@ The engine uses layered providers.
 - Git repositories, branches and refs;
 - systemd units and journal unit arguments;
 - running/stopped containers when Docker/compatible tools are present;
-- filesystem entries for path-taking commands;
+- filesystem entries for path-taking commands and redirection targets;
 - SSH aliases from local SSH configuration and unhashed known-host entries;
 - local APT package metadata with bounded cached discovery;
 - project markers such as `Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `Makefile`;
@@ -274,9 +274,12 @@ The parser contract covers:
 - quote-aware insertion escaping;
 - active command segmentation across `|`, `&&`, `||`, `;` and background `&`;
 - separator suppression inside quotes or when escaped;
-- absolute replacement byte ranges even when the active command is on the right side of a separator.
+- common file redirections such as `>`, `>>`, `<`, `2>`, `2>>`, `&>` and `&>>`;
+- descriptor-duplication recognition so forms such as `2>&1` are not treated as file paths;
+- innermost active routing inside open `$(...)` and backtick command substitutions;
+- absolute replacement byte ranges across separators, redirections and substitutions.
 
-It deliberately does not claim to be a complete Bash parser. Command substitution, heredocs, grouping/subshell syntax, redirections and full shell AST semantics are separate future layers.
+It deliberately does not claim to be a complete Bash parser. Heredoc bodies, process substitution, arithmetic expansion, grouping/subshell execution semantics and full shell AST semantics are separate future layers.
 
 ### Shell adapters
 
@@ -417,7 +420,10 @@ The renderer should debounce expensive context refreshes while keeping prefix fi
 - Bash builtin/alias/function discovery;
 - quote-aware path arguments;
 - nested sudo user/group and command contexts;
-- common Linux CLI option schemas.
+- common Linux CLI option schemas;
+- redirection target completion;
+- command-substitution inner-context routing;
+- typed positional values for users, groups, file arguments and static enumerations.
 
 ### Slice 4 — enrichment and packaging
 
@@ -472,6 +478,8 @@ A new Linux user can install TermSense, enable it for Bash, open a terminal and 
 5. keep normal Bash execution, history and key behavior;
 6. use the core experience fully offline;
 7. receive correct suggestions after pipelines and command separators without altering the left-hand command;
-8. install or uninstall natively without Docker or a background daemon.
+8. install or uninstall natively without Docker or a background daemon;
+9. receive filesystem suggestions for redirection targets without mistaking descriptor duplication for paths;
+10. receive suggestions inside nested command substitutions without rewriting the outer command.
 
 That interaction is the product contract. All implementation decisions should protect it.
