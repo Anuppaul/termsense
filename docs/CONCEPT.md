@@ -116,6 +116,21 @@ TermSense proposes and inserts text. Bash remains responsible for parsing and ex
 
 A suggestion is data until the user explicitly executes it with the shell. Indexing must avoid executing arbitrary discovered commands simply to learn about them.
 
+### No user/project hardcoding
+
+TermSense must never embed developer-specific repository names, project names, container names, service names, branch names, or filesystem paths in the product.
+
+Static knowledge may describe generic CLI grammar, for example `git checkout`, `systemctl restart`, or `docker logs`. Dynamic values after those commands must be discovered from the current machine or current working context.
+
+Examples:
+
+- Git refs come from the current repository;
+- systemd units come from the local Linux installation;
+- Docker container names come from the local Docker daemon;
+- filesystem candidates come from the real local filesystem.
+
+If a local resource does not exist, TermSense must not fabricate it.
+
 ## 4. Knowledge sources
 
 The engine uses layered providers.
