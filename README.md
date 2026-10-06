@@ -22,6 +22,7 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - `termsense doctor`;
 - Bash initialization;
 - automatic suggestion list while typing;
+- concise one-line descriptions beside every suggestion row;
 - inline dim ghost suffix for the selected suggestion;
 - Up / Down selection while suggestions are active;
 - Tab accepts the selected candidate;
