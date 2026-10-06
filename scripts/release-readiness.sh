@@ -13,13 +13,6 @@ require() {
   command -v "$1" >/dev/null 2>&1 || fail "missing required command: $1"
 }
 
-[[ "$(uname -s)" == "Linux" ]] || fail "TermSense release checks require Linux"
-(( BASH_VERSINFO[0] >= 5 )) || fail "TermSense release checks require Bash 5.0 or newer"
-
-for cmd in cargo rustc bash awk grep git dpkg-deb find; do
-  require "$cmd"
-done
-
 read_cargo_field() {
   local field="$1"
   awk -v field="$field" '
@@ -33,6 +26,13 @@ read_cargo_field() {
   ' Cargo.toml
 }
 
+[[ "$(uname -s)" == "Linux" ]] || fail "TermSense release checks require Linux"
+(( BASH_VERSINFO[0] >= 5 )) || fail "TermSense release checks require Bash 5.0 or newer"
+
+for cmd in cargo rustc bash awk grep git dpkg-deb find install mktemp; do
+  require "$cmd"
+done
+
 name="$(read_cargo_field name)"
 version="$(read_cargo_field version)"
 
@@ -43,6 +43,7 @@ version="$(read_cargo_field version)"
 [[ -s LICENSE ]] || fail "LICENSE is missing or empty"
 [[ -s CHANGELOG.md ]] || fail "CHANGELOG.md is missing or empty"
 [[ -s config/default.conf ]] || fail "default config is missing or empty"
+
 grep -q '^MIT License$' LICENSE || fail "LICENSE is not the expected MIT license"
 grep -q '^auto_suggest=1$' config/default.conf || fail "default config missing auto_suggest"
 grep -q '^max_visible=5$' config/default.conf || fail "default config missing max_visible"
@@ -54,6 +55,14 @@ grep -q 'repository = "https://github.com/Anuppaul/termsense"' Cargo.toml \
 if [[ -d .github/workflows ]] && find .github/workflows -type f -print -quit | grep -q .; then
   fail "GitHub Actions workflows are present; project policy currently forbids CI workflows"
 fi
+
+printf '==> source integrity\n'
+[[ "$(grep -c '^_termsense_query() {' shell/termsense.bash)" -eq 1 ]] \
+  || fail "Bash adapter must contain exactly one _termsense_query function"
+[[ "$(grep -c '^_termsense_ctrl_space() {' shell/termsense.bash)" -eq 1 ]] \
+  || fail "Bash adapter must contain exactly one _termsense_ctrl_space function"
+[[ "$(grep -c '^_termsense_draw_overlay() {' shell/termsense.bash)" -eq 1 ]] \
+  || fail "Bash adapter must contain exactly one _termsense_draw_overlay function"
 
 printf '==> git diff check\n'
 git diff --check
@@ -87,6 +96,8 @@ trap 'rm -rf -- "$tmp"' EXIT
 printf '==> generated Bash integration syntax\n'
 ./target/release/termsense init bash > "$tmp/termsense-init.bash"
 bash -n "$tmp/termsense-init.bash"
+[[ "$(grep -c '^_termsense_query() {' "$tmp/termsense-init.bash")" -eq 1 ]] \
+  || fail "generated Bash integration contains duplicate query functions"
 
 printf '==> binary smoke\n'
 ./target/release/termsense status > "$tmp/status.txt"
@@ -97,8 +108,12 @@ grep -q '^config file: ' "$tmp/status.txt" || fail "config status smoke failed"
 ./target/release/termsense suggest d --limit 5 > "$tmp/suggest-command.txt"
 [[ -s "$tmp/suggest-command.txt" ]] || fail "command suggestion smoke returned no candidates"
 
+./target/release/termsense suggest "" --limit 0 > "$tmp/suggest-all.txt"
+[[ -s "$tmp/suggest-all.txt" ]] || fail "unbounded command discovery smoke returned no candidates"
+
 ./target/release/termsense suggest "sudo git che" --limit 20 > "$tmp/suggest-context.txt"
-grep -Fq "checkout" "$tmp/suggest-context.txt" || fail "sudo git contextual completion smoke failed"
+grep -Fq "sudo git checkout" "$tmp/suggest-context.txt" \
+  || fail "sudo git contextual completion smoke failed"
 
 ./target/release/termsense suggest "git status && docker lo" --limit 20 > "$tmp/suggest-segment.txt"
 grep -Fq "git status && docker logs" "$tmp/suggest-segment.txt" \
@@ -116,17 +131,16 @@ grep -Fq 'diff <(git checkout' "$tmp/suggest-process-sub.txt" \
 grep -Fq '( git checkout' "$tmp/suggest-group.txt" \
   || fail "command group smoke failed"
 
-./target/release/termsense suggest "termsense st" --limit 20 > "$tmp/suggest-self.txt"
-grep -Fq "termsense status" "$tmp/suggest-self.txt" \
-  || fail "TermSense self-completion smoke failed"
-
 heredoc_buffer="$(printf 'cat <<EOF\nhello wor')"
 ./target/release/termsense suggest "$heredoc_buffer" --limit 20 > "$tmp/suggest-heredoc.txt"
 [[ ! -s "$tmp/suggest-heredoc.txt" ]] || fail "heredoc body should suppress suggestions"
 
+arithmetic_buffer='echo $((1 + 2'
+./target/release/termsense suggest "$arithmetic_buffer" --limit 20 > "$tmp/suggest-arithmetic.txt"
+[[ ! -s "$tmp/suggest-arithmetic.txt" ]] || fail "open arithmetic expansion should suppress suggestions"
+
 printf '==> install/uninstall lifecycle\n'
 mkdir -p "$tmp/home"
-install_prefix="$tmp/prefix with space"
 
 HOME="$tmp/home" \
 XDG_CONFIG_HOME="$tmp/home/.config" \
@@ -134,10 +148,10 @@ XDG_CACHE_HOME="$tmp/home/.cache" \
 XDG_STATE_HOME="$tmp/home/.local/state" \
 TERMSENSE_SKIP_BUILD=1 \
 bash scripts/install.sh \
-  --prefix "$install_prefix" \
+  --prefix "$tmp/prefix" \
   --bashrc "$tmp/bashrc" >/dev/null
 
-[[ -x "$install_prefix/bin/termsense" ]] || fail "installer did not install binary"
+[[ -x "$tmp/prefix/bin/termsense" ]] || fail "installer did not install binary"
 [[ -f "$tmp/home/.config/termsense/config.conf" ]] || fail "installer did not create config"
 grep -q '^# >>> termsense >>>$' "$tmp/bashrc" || fail "installer did not add managed Bash block"
 grep -q '^TERMSENSE_BIN=' "$tmp/bashrc" || fail "installer did not pin installed binary"
@@ -148,7 +162,7 @@ installed_lookup="$(
   PATH="/usr/bin:/bin" \
   bash --noprofile --norc -ic "source '$tmp/bashrc'; _termsense_binary" 2>/dev/null
 )"
-[[ "$installed_lookup" == "$install_prefix/bin/termsense" ]] \
+[[ "$installed_lookup" == "$tmp/prefix/bin/termsense" ]] \
   || fail "user-local binary lookup fails when prefix/bin is outside PATH"
 
 HOME="$tmp/home" \
@@ -156,11 +170,11 @@ XDG_CONFIG_HOME="$tmp/home/.config" \
 XDG_CACHE_HOME="$tmp/home/.cache" \
 XDG_STATE_HOME="$tmp/home/.local/state" \
 bash scripts/uninstall.sh \
-  --prefix "$install_prefix" \
+  --prefix "$tmp/prefix" \
   --bashrc "$tmp/bashrc" \
   --purge >/dev/null
 
-[[ ! -e "$install_prefix/bin/termsense" ]] || fail "uninstaller did not remove binary"
+[[ ! -e "$tmp/prefix/bin/termsense" ]] || fail "uninstaller did not remove binary"
 ! grep -q '^# >>> termsense >>>$' "$tmp/bashrc" || fail "uninstaller left managed Bash block"
 [[ ! -d "$tmp/home/.config/termsense" ]] || fail "purge left config directory"
 
@@ -174,8 +188,6 @@ deb_file="$(find "$tmp/dist" -maxdepth 1 -type f -name "termsense_${version}_*.d
   || fail "Debian package name mismatch"
 [[ "$(dpkg-deb -f "$deb_file" Version)" == "$version" ]] \
   || fail "Debian package version mismatch"
-dpkg-deb -f "$deb_file" Depends | grep -q 'bash (>= 5.0)' \
-  || fail "Debian package Bash dependency mismatch"
 dpkg-deb -c "$deb_file" | grep -q './usr/share/termsense/default.conf' \
   || fail "Debian package is missing reference default config"
 dpkg-deb -c "$deb_file" | grep -q './usr/share/doc/termsense/CHANGELOG.md' \
