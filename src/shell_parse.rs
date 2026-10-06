@@ -103,10 +103,12 @@ pub(crate) fn active_context(buffer: &str, cursor: usize) -> ActiveContext {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn active_segment_tokens(buffer: &str, cursor: usize) -> Vec<Token> {
     active_context(buffer, cursor).tokens
 }
 
+#[cfg(test)]
 pub(crate) fn tokens_before_cursor(buffer: &str, cursor: usize) -> Vec<Token> {
     let lexemes = lex_range(buffer, 0, cursor);
     let mut tokens: Vec<Token> = lexemes
@@ -134,6 +136,7 @@ pub(crate) fn tokens_before_cursor(buffer: &str, cursor: usize) -> Vec<Token> {
     tokens
 }
 
+#[cfg(test)]
 pub(crate) fn active_segment_start(buffer: &str, cursor: usize) -> usize {
     let base = active_nested_start(buffer, cursor);
     active_segment_start_from(buffer, base, cursor)
