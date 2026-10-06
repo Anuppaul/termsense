@@ -2629,9 +2629,14 @@ mod tests {
     #[test]
     fn git_subcommands_are_contextual() {
         let candidates = super::suggest(&[], &UsageState::default(), "git che", 7, 20);
-        assert!(candidates
+        let checkout = candidates
             .iter()
-            .any(|candidate| candidate.insert_text == "checkout"));
+            .find(|candidate| candidate.insert_text == "checkout")
+            .expect("checkout candidate");
+        assert_eq!(
+            checkout.description,
+            "Switch branches or restore files"
+        );
         assert!(!candidates
             .iter()
             .any(|candidate| candidate.insert_text == "status"));
