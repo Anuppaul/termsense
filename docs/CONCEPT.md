@@ -264,16 +264,19 @@ The core implementation is **Rust** for:
 
 The engine parses the active command segment itself rather than splitting blindly on whitespace. The parser must preserve replacement byte ranges while deriving logical token values.
 
-The initial parser contract covers:
+The parser contract covers:
 
 - unquoted tokens;
 - backslash-escaped characters;
 - open and closed single quotes;
 - open and closed double quotes;
 - whitespace inside quoted tokens;
-- quote-aware insertion escaping.
+- quote-aware insertion escaping;
+- active command segmentation across `|`, `&&`, `||`, `;` and background `&`;
+- separator suppression inside quotes or when escaped;
+- absolute replacement byte ranges even when the active command is on the right side of a separator.
 
-It deliberately does not claim to be a complete Bash parser. Pipelines, compound commands, command substitution, heredocs and full shell AST semantics are separate future layers.
+It deliberately does not claim to be a complete Bash parser. Command substitution, heredocs, grouping/subshell syntax, redirections and full shell AST semantics are separate future layers.
 
 ### Shell adapters
 
@@ -425,6 +428,21 @@ The renderer should debounce expensive context refreshes while keeping prefix fi
 - `termsense doctor`;
 - configuration file and keybinding customization.
 
+### Installation and packaging
+
+TermSense is a native Linux binary, not a containerized runtime.
+
+Installation layers are separated deliberately:
+
+- user-local source installer may manage one marked block in that user's Bash rc file;
+- uninstall removes only the TermSense-managed block;
+- purge is explicit for cache/state/config removal;
+- Debian packaging installs the binary system-wide but must not edit an arbitrary user's dotfiles while running as root;
+- shell activation remains explicit per user;
+- generated distribution artifacts are local build outputs and are not committed.
+
+Initial Debian package targets are amd64 and arm64. Package builds remain local while CI is intentionally disabled.
+
 ### Later
 
 - Zsh adapter;
@@ -452,6 +470,8 @@ A new Linux user can install TermSense, enable it for Bash, open a terminal and 
 3. accept a suggestion without retyping it;
 4. receive context-aware candidates for common Linux workflows;
 5. keep normal Bash execution, history and key behavior;
-6. use the core experience fully offline.
+6. use the core experience fully offline;
+7. receive correct suggestions after pipelines and command separators without altering the left-hand command;
+8. install or uninstall natively without Docker or a background daemon.
 
 That interaction is the product contract. All implementation decisions should protect it.
