@@ -101,6 +101,7 @@ if (( enable_shell )); then
 
 # >>> termsense >>>
 if [[ -x "$binary" ]]; then
+  TERMSENSE_BIN="$binary"
   eval "\$("$binary" init bash)"
 fi
 # <<< termsense <<<
