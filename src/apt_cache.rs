@@ -44,7 +44,7 @@ pub(crate) fn cache_path() -> Option<PathBuf> {
 }
 
 fn refresh_packages() -> Vec<String> {
-    if let Some(output) = run_bounded("apt-cache", &["pkgnames"], 1200) {
+    if let Some(output) = run_bounded("apt-cache", &["pkgnames"], 450) {
         let packages = parse_lines(&output);
         if !packages.is_empty() {
             return packages;
