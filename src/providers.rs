@@ -1,5 +1,6 @@
 use crate::{
     apt_cache,
+    man_cache,
     runtime_cache,
     shell_parse::{active_context, quote_candidate, Token},
     usage::UsageState,
@@ -321,7 +322,27 @@ pub(crate) fn suggest(
         _ => {}
     }
 
+    if candidates.is_empty() && current.text.starts_with('-') {
+        add_man_option_candidates(&mut candidates, command, current);
+    }
+
     finalize(candidates, usage, limit, buffer, cursor)
+}
+
+fn add_man_option_candidates(out: &mut Vec<Candidate>, command: &str, current: &Token) {
+    for option in man_cache::options(command) {
+        push_match(
+            out,
+            &option,
+            &option,
+            &current.text,
+            "option",
+            "man-cache",
+            current.start,
+            current.end,
+            350,
+        );
+    }
 }
 
 fn add_command_candidates(out: &mut Vec<Candidate>, commands: &[CommandEntry], current: &Token) {
@@ -1604,7 +1625,8 @@ fn usage_key_for(source: &str, kind: &str, insert_text: &str) -> String {
         | "grep-schema"
         | "tar-schema"
         | "curl-schema"
-        | "command-lookup-schema" => format!("{source}:{kind}:{insert_text}"),
+        | "command-lookup-schema"
+        | "man-cache" => format!("{source}:{kind}:{insert_text}"),
         _ => String::new(),
     }
 }
