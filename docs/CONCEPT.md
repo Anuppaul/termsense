@@ -132,7 +132,7 @@ A suggestion is data until the user explicitly executes it with the shell. Index
 
 TermSense must never embed developer-specific repository names, project names, container names, service names, branch names, or filesystem paths in the product.
 
-Static knowledge may describe generic CLI grammar, for example `git checkout`, `systemctl restart`, or `docker logs`. Dynamic values after those commands must be discovered from the current machine or current working context.
+Static knowledge may describe generic CLI grammar, for example `git checkout`, `systemctl restart`, `docker logs`, `find -name`, `grep --recursive`, `tar --extract`, or `curl --header`. Dynamic values after those commands must be discovered from the current machine or current working context.
 
 Examples:
 
@@ -150,10 +150,10 @@ The engine uses layered providers.
 ### Tier 0 — always-fast local sources
 
 - `PATH` executables;
-- aliases/functions exported by the shell adapter;
+- Bash builtins, aliases and user-facing functions exported by the shell adapter;
 - filesystem entries relevant to the cursor;
 - cached command metadata;
-- local usage/history statistics.
+- bounded privacy-safe accepted-suggestion statistics.
 
 ### Tier 1 — structured local context
 
@@ -260,6 +260,21 @@ The core implementation is **Rust** for:
 - predictable memory use;
 - straightforward Linux packaging.
 
+### Shell-aware parsing
+
+The engine parses the active command segment itself rather than splitting blindly on whitespace. The parser must preserve replacement byte ranges while deriving logical token values.
+
+The initial parser contract covers:
+
+- unquoted tokens;
+- backslash-escaped characters;
+- open and closed single quotes;
+- open and closed double quotes;
+- whitespace inside quoted tokens;
+- quote-aware insertion escaping.
+
+It deliberately does not claim to be a complete Bash parser. Pipelines, compound commands, command substitution, heredocs and full shell AST semantics are separate future layers.
+
 ### Shell adapters
 
 The core exposes stable machine-readable commands so adapters stay thin.
@@ -288,6 +303,8 @@ The Bash adapter owns:
 - candidate insertion;
 - menu dismissal/navigation;
 - forwarding shell context to the Rust engine;
+- exporting command-name snapshots for Bash builtins, aliases and user-facing functions;
+- filtering internal completion/helper functions from that snapshot;
 - rendering without taking over command execution.
 
 The integration must preserve normal Readline behavior and avoid stealing standard shortcuts except the documented TermSense bindings.
@@ -393,7 +410,11 @@ The renderer should debounce expensive context refreshes while keeping prefix fi
 - Docker containers;
 - SSH hosts from local configuration;
 - APT package names from local package metadata;
-- project command providers.
+- project command providers;
+- Bash builtin/alias/function discovery;
+- quote-aware path arguments;
+- nested sudo user/group and command contexts;
+- common Linux CLI option schemas.
 
 ### Slice 4 — enrichment and packaging
 
