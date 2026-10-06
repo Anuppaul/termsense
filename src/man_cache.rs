@@ -133,7 +133,7 @@ fn normalize_option(token: &str) -> Option<String> {
 
     value = value.trim_end_matches(|ch: char| matches!(ch, ',' | ';' | '.' | ':' | ')' | ']'));
 
-    if let Some(index) = value.find(['=', '[', '<']) {
+    if let Some(index) = value.find(|ch: char| matches!(ch, '=' | '[' | '<')) {
         let base = &value[..index];
         if base.starts_with("--") && base.len() > 2 {
             value = base;
