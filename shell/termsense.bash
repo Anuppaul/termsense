@@ -46,14 +46,14 @@ _termsense_load_config() {
 _termsense_load_config
 
 : "${TERMSENSE_AUTO_SUGGEST:=1}"
-: "${TERMSENSE_MAX_VISIBLE:=5}"
+: "${TERMSENSE_MAX_VISIBLE:=20}"
 : "${TERMSENSE_GHOST:=1}"
 : "${TERMSENSE_CTRL_SPACE:=1}"
 
 [[ "$TERMSENSE_AUTO_SUGGEST" =~ ^[01]$ ]] || TERMSENSE_AUTO_SUGGEST=1
 [[ "$TERMSENSE_GHOST" =~ ^[01]$ ]] || TERMSENSE_GHOST=1
 [[ "$TERMSENSE_CTRL_SPACE" =~ ^[01]$ ]] || TERMSENSE_CTRL_SPACE=1
-[[ "$TERMSENSE_MAX_VISIBLE" =~ ^[0-9]+$ ]] || TERMSENSE_MAX_VISIBLE=5
+[[ "$TERMSENSE_MAX_VISIBLE" =~ ^[0-9]+$ ]] || TERMSENSE_MAX_VISIBLE=20
 (( TERMSENSE_MAX_VISIBLE >= 1 )) || TERMSENSE_MAX_VISIBLE=1
 (( TERMSENSE_MAX_VISIBLE <= 20 )) || TERMSENSE_MAX_VISIBLE=20
 
@@ -265,7 +265,7 @@ _termsense_draw_overlay() {
   fi
 
   local max=$TERMSENSE_MAX_VISIBLE
-  [[ "$max" =~ ^[0-9]+$ ]] || max=5
+  [[ "$max" =~ ^[0-9]+$ ]] || max=20
   (( max < 1 )) && max=1
   (( max > total )) && max=$total
 
