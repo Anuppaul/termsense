@@ -53,7 +53,10 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - command-name argument intelligence for which/whereis/type/command/man;
 - active command-segment parsing across pipes, &&, ||, semicolons and background separators;
 - native user-local install/uninstall scripts;
-- local Debian package builder for amd64/arm64.
+- local Debian package builder for amd64/arm64;
+- filesystem completion for input/output redirection targets;
+- innermost command routing inside open $() and backtick command substitutions;
+- richer typed positional values for find/grep/tar/curl.
 
 The complete product contract is in [docs/CONCEPT.md](docs/CONCEPT.md).
 
@@ -221,6 +224,67 @@ $ grep "a|b" fi
 ```
 
 Separators inside quotes or escaped separators are not treated as command boundaries.
+
+Redirection targets are treated as filesystem arguments without losing the surrounding command:
+
+```text
+$ echo hello > lo
+    > echo hello > logs/
+      echo hello > local.txt
+
+$ command 2>> /var/lo
+    > command 2>> /var/log/
+
+$ sort < da
+    > sort < data.txt
+
+$ command 2>/dev/nu
+    > command 2>/dev/null
+```
+
+Descriptor duplication such as `2>&1` is recognized as descriptor syntax rather than a filesystem target.
+
+Open command substitutions route completion to the innermost command while preserving the outer line:
+
+```text
+$ echo $(git che
+    > echo $(git checkout
+      echo $(git check-ignore
+
+$ printf '%s' "$(docker lo
+    > printf '%s' "$(docker logs
+
+$ echo `git che
+    > echo `git checkout
+```
+
+Richer positional models distinguish option values from ordinary paths:
+
+```text
+$ find ./ -type d
+    > find ./ -type d
+
+$ find ./ -user ro
+    > find ./ -user root
+
+$ find ./ -newer bu
+    > find ./ -newer build.log
+
+$ grep -f pat
+    > grep -f patterns.txt
+
+$ tar -czf arc
+    > tar -czf archive.tar.gz
+
+$ tar --file=arc
+    > tar --file=archive.tar.gz
+
+$ curl --output=do
+    > curl --output=download.bin
+
+$ curl -H "Accept:
+    # free-form header value: no bogus filesystem suggestion
+```
 
 Controls:
 
@@ -521,9 +585,9 @@ Only installed `d...` commands are candidates. If `docker` is repeatedly accepte
 
 The automatic renderer hooks ASCII printable keystrokes through Readline macros so it can refresh after normal insertion. Bracketed paste remains handled by Readline as a single paste operation. Non-ASCII input remains native Bash input and can still use explicit Ctrl+Space discovery.
 
-The parser now understands open single/double quotes, backslash-escaped characters, and active segments separated by `|`, `&&`, `||`, `;`, or background `&`. Separator characters inside quotes or escaped separators do not split the active context.
+The parser now understands open single/double quotes, backslash-escaped characters, active segments separated by `|`, `&&`, `||`, `;`, or background `&`, common file redirections, and open `$(...)` / backtick command substitutions. Separator characters inside quotes or escaped separators do not split the active context.
 
-It is still deliberately not a full Bash AST: command substitution, heredocs, grouping/subshell syntax, redirections and every compound-shell grammar form remain future parser work.
+It is still deliberately not a full Bash AST. Heredoc bodies, grouping/subshell execution semantics, process substitution, arithmetic expansion, every redirection edge case, and complete compound-shell grammar remain future parser work.
 
 Multiline redraw hardening and broader shell/keymap compatibility also remain active implementation work.
 
@@ -531,7 +595,7 @@ Multiline redraw hardening and broader shell/keymap compatibility also remain ac
 
 The next provider work extends the same generic context model with:
 
-- redirection and command-substitution aware parsing;
+- process substitution, grouping and richer compound-shell parsing;
 - more option-value schemas and positional argument models;
 - SSH Include-file expansion and additional safe local host sources;
 - short-lived caches for more expensive dynamic providers;
