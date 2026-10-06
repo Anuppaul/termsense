@@ -35,10 +35,22 @@ $ systemctl res
 For the highest-ranked completion, the untyped suffix may also appear as ghost text.
 
 ```text
-$ systemctl res[tart nginx.service]
+$ systemctl res[tart]
 ```
 
 The bracketed section above represents dim ghost text, not characters that have already been inserted.
+
+Suggestion rows render the **complete prospective command line**, while acceptance still replaces only the active token. For example:
+
+```text
+$ sudo git che[ckout]
+
+  > sudo git checkout
+    sudo git check-attr
+    sudo git check-ignore
+```
+
+This display/insert separation is a product invariant: users should see the full command they are choosing without TermSense rewriting unrelated text in the current buffer.
 
 ### 2.2 Ctrl+Space — command browser / IntelliSense
 
