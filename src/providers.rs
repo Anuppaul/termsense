@@ -241,10 +241,6 @@ pub(crate) fn suggest(
     cursor: usize,
     limit: usize,
 ) -> Vec<Candidate> {
-    if limit == 0 {
-        return Vec::new();
-    }
-
     let context = active_context(buffer, cursor);
     if context.suppress_suggestions {
         return Vec::new();
@@ -1732,7 +1728,9 @@ fn finalize(
             candidate.replacement_end,
         ))
     });
-    candidates.truncate(limit);
+    if limit > 0 {
+        candidates.truncate(limit);
+    }
     candidates
 }
 
