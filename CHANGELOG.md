@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — implementation complete, verification pending
+## 0.1.0 — implementation complete, automated verification passed
 
 Initial TermSense release scope:
 
@@ -27,4 +27,4 @@ Initial TermSense release scope:
 - local release-readiness gate;
 - no GitHub Actions/CI workflow by project policy.
 
-The code implementation is complete for the v0.1 scope. Release remains gated on the local compile/runtime/readiness pass.
+The code implementation is complete for the v0.1 scope. Local automated release-readiness verification passed with 66/66 tests, a clean release build, Bash syntax checks, binary smoke tests, install/uninstall lifecycle checks, and Debian package generation. Final release remains gated only on interactive terminal UX validation.
