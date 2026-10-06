@@ -15,6 +15,8 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 
 > Status: **v0.1.0 released.** Automated release-readiness and interactive Bash UX validation passed.
 
+> Created and maintained by [Anuppaul](https://github.com/Anuppaul).
+
 <p align="center">
   <img src="assets/termsense-terminal.svg" alt="TermSense terminal suggestions with one-line command descriptions" width="100%">
 </p>
