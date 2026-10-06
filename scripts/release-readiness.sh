@@ -153,6 +153,8 @@ deb_file="$(find "$tmp/dist" -maxdepth 1 -type f -name "termsense_${version}_*.d
   || fail "Debian package version mismatch"
 dpkg-deb -c "$deb_file" | grep -q './usr/share/termsense/default.conf' \
   || fail "Debian package is missing reference default config"
+dpkg-deb -c "$deb_file" | grep -q './usr/share/doc/termsense/CHANGELOG.md' \
+  || fail "Debian package is missing changelog"
 
 printf 'TermSense release readiness: PASS\n'
 printf 'version: %s\n' "$version"
