@@ -49,7 +49,8 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - Bash builtin, alias and user-function command discovery;
 - nested sudo context, including local user/group completion and nested command routing;
 - common Linux CLI schemas for find, grep, tar and curl;
-- option-value path completion such as ssh -i, tar -f and curl -o.
+- option-value path completion such as ssh -i, tar -f and curl -o;
+- command-name argument intelligence for which/whereis/type/command/man.
 
 The complete product contract is in [docs/CONCEPT.md](docs/CONCEPT.md).
 
@@ -185,6 +186,15 @@ $ curl --hea
 $ ssh -i ~/.ssh/id_
     > ssh -i ~/.ssh/id_ed25519
       ssh -i ~/.ssh/id_rsa
+
+$ which do
+    > which docker
+      which domainname
+
+$ type c
+    > type cd
+      type command
+      type curl
 ```
 
 Filesystem entries, SSH hosts, units and package names are only shown when they exist in the current machine's local data sources.
