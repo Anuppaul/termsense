@@ -166,14 +166,13 @@ The engine uses layered providers.
 - project markers such as `Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `Makefile`;
 - shell completion metadata where safely parseable.
 
-### Tier 2 — background enrichment
+### Tier 2 — bounded enrichment
 
-- man-page metadata;
-- help/completion descriptions gathered through explicitly safe adapters;
+- cached local man-page option metadata for generic commands;
 - package-manager metadata;
-- richer command schemas.
+- richer explicitly safe command schemas.
 
-Tier 2 enrichment must never block keystroke latency.
+Man metadata lookup must never execute the target command, uses a hard timeout, and is persisted only as generic option names. Tier 2 enrichment must not turn normal keystroke handling into an unbounded subprocess path.
 
 ## 5. Candidate model
 
@@ -430,12 +429,12 @@ The renderer should debounce expensive context refreshes while keeping prefix fi
 
 ### Slice 4 — enrichment and packaging
 
-- cached completion metadata;
-- man/help enrichment;
+- cached generic man option metadata;
 - DEB packaging;
 - install/uninstall lifecycle;
 - `termsense doctor`;
-- configuration file and keybinding customization.
+- safe configuration file and keybinding customization;
+- local release-readiness gate.
 
 ### Installation and packaging
 
@@ -454,13 +453,16 @@ Initial Debian package targets are amd64 and arm64. Package builds remain local 
 
 A local release-readiness gate must validate formatting, tests, release build, Bash syntax, binary behavior, package identity and Debian package metadata without creating or invoking a CI workflow.
 
-### Later
+### Post-v0.1
 
+- deeper closed compound-shell AST semantics;
+- additional specialized provider schemas and project adapters;
+- smarter cache invalidation signals;
 - Zsh adapter;
 - Fish adapter;
 - typo/fuzzy ranking;
 - optional natural-language-to-command provider;
-- package repositories beyond the first supported package manager.
+- signed/repository package publishing.
 
 ## 13. Non-goals for the first release
 
