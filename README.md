@@ -44,7 +44,12 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - generic filesystem completion for common file commands such as cat/cp/mv/rm/ls/nano/vim;
 - SSH host completion from local ~/.ssh/config and unhashed known_hosts entries;
 - journalctl option and local systemd-unit completion;
-- APT subcommands, options and locally cached package-name completion.
+- APT subcommands, options and locally cached package-name completion;
+- shell-aware token parsing for open single/double quotes and backslash-escaped spaces;
+- Bash builtin, alias and user-function command discovery;
+- nested sudo context, including local user/group completion and nested command routing;
+- common Linux CLI schemas for find, grep, tar and curl;
+- option-value path completion such as ssh -i, tar -f and curl -o.
 
 The complete product contract is in [docs/CONCEPT.md](docs/CONCEPT.md).
 
@@ -120,6 +125,66 @@ $ apt ins
 $ sudo apt install pos
     > sudo apt install postgresql
       sudo apt install postgresql-client
+```
+
+Quoted and escaped paths are parsed as one shell token:
+
+```text
+$ cat "My Doc
+    > cat "My Documents/
+      cat "My Document.txt
+
+$ cat My\\ Doc
+    > cat My\\ Documents/
+```
+
+The active quote style is preserved while TermSense replaces only the logical token body.
+
+Bash-native command discovery is also included:
+
+```text
+$ c
+    > cd
+      command
+      compgen
+      ...
+```
+
+The command pool merges `PATH` executables with Bash builtins, aliases and user-facing shell functions. Internal underscore-prefixed completion functions are intentionally excluded from the exported shell context.
+
+Nested `sudo` context is parsed instead of treating every token after `sudo` as a raw command:
+
+```text
+$ sudo -u ro
+    > sudo -u root
+
+$ sudo -H git che
+    > sudo -H git checkout
+      sudo -H git check-ignore
+```
+
+More generic CLI intelligence now includes:
+
+```text
+$ find ./ -na
+    > find ./ -name
+
+$ grep -r
+    > grep -r
+      grep -R
+      grep --recursive
+
+$ tar -x
+    > tar -xf
+      tar -xvf
+
+$ curl --hea
+    > curl --head
+      curl --header
+
+$ ssh -i ~/.ssh/id_
+    > ssh -i ~/.ssh/id_ed25519
+      ssh -i ~/.ssh/id_rsa
 ```
 
 Filesystem entries, SSH hosts, units and package names are only shown when they exist in the current machine's local data sources.
@@ -354,16 +419,18 @@ Only installed `d...` commands are candidates. If `docker` is repeatedly accepte
 
 ## Current Bash renderer boundary
 
-The first automatic renderer hooks ASCII printable keystrokes through Readline macros so it can refresh after normal insertion. Bracketed paste remains handled by Readline as a single paste operation. Non-ASCII input remains native Bash input and can still use explicit Ctrl+Space discovery.
+The automatic renderer hooks ASCII printable keystrokes through Readline macros so it can refresh after normal insertion. Bracketed paste remains handled by Readline as a single paste operation. Non-ASCII input remains native Bash input and can still use explicit Ctrl+Space discovery.
 
-This renderer is intentionally an initial vertical slice. Context-aware arguments, multiline redraw hardening, and broader shell/keymap compatibility remain active implementation work.
+The parser now understands open single/double quotes and backslash-escaped characters for the active token. It is still deliberately not a full Bash AST: pipelines, command substitutions, heredocs and every compound-shell grammar form remain future parser work.
+
+Multiline redraw hardening and broader shell/keymap compatibility also remain active implementation work.
 
 ## Next
 
 The next provider work extends the same generic context model with:
 
-- quoted/escaped shell-token parsing for paths containing whitespace;
-- more option/flag schemas;
+- pipeline/command-separator aware parsing;
+- more option-value schemas and positional argument models;
 - SSH Include-file expansion and additional safe local host sources;
 - short-lived caches for more expensive dynamic providers;
 - additional safe project manifests and task runners;
@@ -388,7 +455,7 @@ There is intentionally no GitHub Actions workflow in the repository at this stag
 
 ## APT package cache
 
-APT package suggestions never perform a network request. When an APT package argument is first requested, TermSense tries the local `apt-cache pkgnames` command with a hard timeout and stores the result for up to 24 hours:
+APT package suggestions never perform a network request. When an APT package argument is first requested, TermSense tries the local `apt-cache pkgnames` command with a 450 ms hard timeout and stores the result for up to 24 hours:
 
 ```text
 $XDG_CACHE_HOME/termsense/apt-packages-v1.txt
