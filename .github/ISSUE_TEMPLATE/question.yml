@@ -1,0 +1,32 @@
+name: Question
+description: Ask about installation, behavior, compatibility, or contribution
+title: "[Question] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check README.md, SUPPORT.md, and docs/COMPATIBILITY.md first. Do not include secrets, tokens, private hostnames, or sensitive shell history.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you need help with?
+      description: Describe the command, installation, compatibility, or contribution question.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Relevant context
+      description: Include TermSense version, Linux distribution, Bash version, and a sanitized terminal example when relevant.
+
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the README and support/compatibility documentation.
+          required: true
+        - label: I removed secrets and private environment details.
+          required: true
