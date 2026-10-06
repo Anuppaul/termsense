@@ -688,7 +688,16 @@ const CURL_OPTIONS: &[&str] = &[
     "-v",
 ];
 
-const DF_OPTIONS: &[&str] = &["--all", "--human-readable", "--inodes", "--print-type", "-a", "-h", "-i", "-T"];
+const DF_OPTIONS: &[&str] = &[
+    "--all",
+    "--human-readable",
+    "--inodes",
+    "--print-type",
+    "-a",
+    "-h",
+    "-i",
+    "-T",
+];
 const DU_OPTIONS: &[&str] = &[
     "--all",
     "--apparent-size",
