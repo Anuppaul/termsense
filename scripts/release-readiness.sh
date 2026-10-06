@@ -52,9 +52,16 @@ grep -q '^ctrl_space=1$' config/default.conf || fail "default config missing ctr
 grep -q 'repository = "https://github.com/Anuppaul/termsense"' Cargo.toml \
   || fail "Cargo repository identity mismatch"
 
-if [[ -d .github/workflows ]] && find .github/workflows -type f -print -quit | grep -q .; then
-  fail "GitHub Actions workflows are present; project policy currently forbids CI workflows"
-fi
+release_workflow=".github/workflows/release.yml"
+[[ -s "$release_workflow" ]] || fail "tag-only GitHub release workflow is missing"
+
+unexpected_workflow="$(
+  find .github/workflows -maxdepth 1 -type f ! -name 'release.yml' -print -quit 2>/dev/null || true
+)"
+[[ -z "$unexpected_workflow" ]]   || fail "unexpected GitHub Actions workflow present: $unexpected_workflow"
+
+grep -Fq 'tags:' "$release_workflow"   || fail "release workflow is not tag-triggered"
+grep -Fq 'gh release create' "$release_workflow"   || fail "release workflow does not publish a GitHub Release"
 
 printf '==> source integrity\n'
 [[ "$(grep -c '^_termsense_query() {' shell/termsense.bash)" -eq 1 ]] \
