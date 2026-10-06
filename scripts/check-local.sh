@@ -32,9 +32,17 @@ bash -n scripts/uninstall.sh
 [[ ! -f scripts/package-deb.sh ]] || bash -n scripts/package-deb.sh
 [[ ! -f scripts/release-readiness.sh ]] || bash -n scripts/release-readiness.sh
 
-printf '==> Verify no GitHub Actions workflows are present\n'
-if [[ -d .github/workflows ]] && find .github/workflows -type f -print -quit | grep -q .; then
-  printf 'unexpected workflow file found under .github/workflows\n' >&2
+printf '==> Verify tag-only GitHub release workflow\n'
+[[ -s .github/workflows/release.yml ]] || {
+  printf 'missing .github/workflows/release.yml\n' >&2
+  exit 1
+}
+
+unexpected_workflow="$(
+  find .github/workflows -maxdepth 1 -type f ! -name 'release.yml' -print -quit 2>/dev/null || true
+)"
+if [[ -n "$unexpected_workflow" ]]; then
+  printf 'unexpected workflow file found: %s\n' "$unexpected_workflow" >&2
   exit 1
 fi
 
