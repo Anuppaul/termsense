@@ -63,6 +63,11 @@ __TERMSENSE_DISPLAYS=()
 __TERMSENSE_USAGE_KEYS=()
 
 _termsense_binary() {
+  if [[ -n "${TERMSENSE_BIN:-}" && -x "$TERMSENSE_BIN" ]]; then
+    printf '%s\n' "$TERMSENSE_BIN"
+    return 0
+  fi
+
   command -v termsense 2>/dev/null
 }
 
