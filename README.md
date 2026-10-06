@@ -40,7 +40,11 @@ Starter work:
 - [Roadmap](docs/ROADMAP.md)
 - [Provider development guide](docs/PROVIDER_GUIDE.md)
 - [Compatibility](docs/COMPATIBILITY.md)
+- [Release process](docs/RELEASE_PROCESS.md)
 - [Contributing](CONTRIBUTING.md)
+- [Governance](GOVERNANCE.md)
+- [Maintainers](MAINTAINERS.md)
+- [Support](SUPPORT.md)
 - [Security policy](SECURITY.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 
