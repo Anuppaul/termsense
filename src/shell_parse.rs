@@ -154,11 +154,7 @@ fn active_nested_start(buffer: &str, cursor: usize) -> usize {
         }
 
         if ch == '\'' && quote != QuoteStyle::Double {
-            quote = if quote == QuoteStyle::Single {
-                QuoteStyle::None
-            } else {
-                QuoteStyle::Single
-            };
+            quote = QuoteStyle::Single;
             continue;
         }
 
@@ -171,10 +167,82 @@ fn active_nested_start(buffer: &str, cursor: usize) -> usize {
             continue;
         }
 
-        if ch == '
-            if quote == QuoteStyle::None
-                && frames.last().is_some_and(|frame| frame.kind == FrameKind::Backtick)
+        if ch == '$' {
+            if let Some((next_offset, '(')) = iter.peek().copied() {
+                iter.next();
+                frames.push(Frame {
+                    kind: FrameKind::DollarParen,
+                    start: next_offset + 1,
+                    outer_quote: quote,
+                });
+                quote = QuoteStyle::None;
+                continue;
+            }
+        }
+
+        if quote == QuoteStyle::None && matches!(ch, '<' | '>') {
+            if let Some((next_offset, '(')) = iter.peek().copied() {
+                iter.next();
+                frames.push(Frame {
+                    kind: FrameKind::ProcessSub,
+                    start: next_offset + 1,
+                    outer_quote: quote,
+                });
+                continue;
+            }
+        }
+
+        if quote == QuoteStyle::None && ch == '(' {
+            let previous = before[..offset].chars().rev().find(|value| !value.is_whitespace());
+            if previous.is_none()
+                || previous.is_some_and(|value| matches!(value, ';' | '|' | '&' | '(' | '{'))
             {
+                frames.push(Frame {
+                    kind: FrameKind::GroupParen,
+                    start: offset + 1,
+                    outer_quote: quote,
+                });
+                continue;
+            }
+        }
+
+        if quote == QuoteStyle::None && ch == '{' {
+            let previous = before[..offset].chars().rev().find(|value| !value.is_whitespace());
+            if previous.is_none()
+                || previous.is_some_and(|value| matches!(value, ';' | '|' | '&' | '(' | '{'))
+            {
+                frames.push(Frame {
+                    kind: FrameKind::BraceGroup,
+                    start: offset + 1,
+                    outer_quote: quote,
+                });
+                continue;
+            }
+        }
+
+        if ch == ')' && quote == QuoteStyle::None {
+            if frames.last().is_some_and(|frame| {
+                matches!(
+                    frame.kind,
+                    FrameKind::DollarParen | FrameKind::ProcessSub | FrameKind::GroupParen
+                )
+            }) {
+                let frame = frames.pop().expect("frame");
+                quote = frame.outer_quote;
+                continue;
+            }
+        }
+
+        if ch == '}' && quote == QuoteStyle::None {
+            if frames.last().is_some_and(|frame| frame.kind == FrameKind::BraceGroup) {
+                let frame = frames.pop().expect("frame");
+                quote = frame.outer_quote;
+                continue;
+            }
+        }
+
+        if ch == char::from(96u8) {
+            if frames.last().is_some_and(|frame| frame.kind == FrameKind::Backtick) {
                 let frame = frames.pop().expect("frame");
                 quote = frame.outer_quote;
             } else {
