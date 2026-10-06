@@ -254,7 +254,10 @@ fn active_segment_start_from(buffer: &str, base: usize, cursor: usize) -> usize 
         }
 
         if ch == '&' {
-            if iter.peek().is_some_and(|(_, next)| *next == '>') {
+            let absolute = base + relative_offset;
+            let previous_is_redirect = absolute > base
+                && buffer.as_bytes().get(absolute - 1).is_some_and(|byte| *byte == b'>');
+            if previous_is_redirect || iter.peek().is_some_and(|(_, next)| *next == '>') {
                 continue;
             }
         }
