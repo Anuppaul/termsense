@@ -1,4 +1,5 @@
 mod providers;
+mod usage;
 
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
@@ -46,6 +47,11 @@ enum Command {
     },
     /// Refresh the local command index immediately.
     Index,
+    /// Record an accepted TermSense suggestion for local ranking.
+    Record {
+        /// Complete command line shown to the user.
+        value: String,
+    },
     /// Print shell integration code.
     Init {
         #[arg(value_parser = ["bash"])]
@@ -125,7 +131,8 @@ fn run(cli: Cli) -> Result<(), String> {
             }
 
             let index = load_or_refresh_index(false)?;
-            let candidates = providers::suggest(&index.commands, &buffer, cursor, limit);
+            let usage = usage::UsageState::load();
+            let candidates = providers::suggest(&index.commands, &usage, &buffer, cursor, limit);
             if json {
                 println!(
                     "{}",
@@ -153,6 +160,9 @@ fn run(cli: Cli) -> Result<(), String> {
                 println!("cache: {}", path.display());
             }
         }
+        Command::Record { value } => {
+            usage::UsageState::record(&value)?;
+        }
         Command::Init { shell } if shell == "bash" => {
             print!("{}", include_str!("../shell/termsense.bash"));
         }
@@ -168,6 +178,12 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("network required: no");
             if let Some(path) = cache_path() {
                 println!("command cache: {}", path.display());
+            }
+            let usage = usage::UsageState::load();
+            println!("accepted usage keys: {}", usage.entries());
+            println!("accepted usage events: {}", usage.total_events());
+            if let Some(path) = usage::state_path() {
+                println!("usage state: {}", path.display());
             }
         }
     }
