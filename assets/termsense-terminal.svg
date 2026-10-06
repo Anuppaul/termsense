@@ -71,7 +71,7 @@
 
   <line x1="100" y1="614" x2="1100" y2="614" stroke="#243044"/>
   <text x="104" y="642" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" fill="#64748b">↑↓ select</text>
-  <text x="220" y="642" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" fill="#64748b">Tab / → accept</text>
+  <text x="220" y="642" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" fill="#64748b">Tab / Enter / → accept</text>
   <text x="390" y="642" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" fill="#64748b">Esc dismiss</text>
   <text x="520" y="642" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" fill="#64748b">Ctrl+Space browse all commands</text>
 
