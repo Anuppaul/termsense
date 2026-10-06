@@ -1501,6 +1501,7 @@ fn git_refs() -> Vec<String> {
         ],
         160,
     ) else {
+        runtime_cache::store_lines(&key, &[]);
         return Vec::new();
     };
 
@@ -1524,6 +1525,7 @@ fn docker_container_names() -> Vec<String> {
     }
 
     let Some(output) = run_bounded("docker", &["ps", "-a", "--format", "{{.Names}}"], 160) else {
+        runtime_cache::store_lines("docker-containers-v1", &[]);
         return Vec::new();
     };
 
