@@ -27,8 +27,8 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - Tab accepts the selected candidate;
 - Right Arrow accepts the ghost candidate;
 - Esc dismisses the live menu;
-- **Ctrl+Space** opens the larger command browser;
-- optional `fzf` browser with a dependency-free numbered fallback;
+- **Ctrl+Space** opens the built-in non-blocking IntelliSense palette;
+- typing after Ctrl+Space filters the palette while Up/Down navigate the full candidate set;
 - Git subcommand suggestions such as `git che` → `checkout` / `check-ignore`;
 - current-repository Git ref suggestions for commands such as `git checkout`;
 - systemctl subcommand suggestions and local systemd unit discovery;
@@ -508,12 +508,6 @@ export TERMSENSE_CTRL_SPACE=1
 
 `max_visible` is clamped to 1–20. Set `ctrl_space=0` to leave Ctrl+Space unbound by TermSense.
 
-## Optional fzf
-
-If `fzf` is installed, Ctrl+Space uses it as a searchable larger browser. It is not required by the core package.
-
-Without `fzf`, TermSense shows a dependency-free numbered candidate picker.
-
 ## Engine examples
 
 List commands:
@@ -684,9 +678,7 @@ It is still deliberately not a full Bash AST. Heredoc bodies, closed-group execu
 
 Multiline redraw hardening and broader shell/keymap compatibility also remain active implementation work.
 
-## Next
-
-The next provider work extends the same generic context model with:
+## Post-v0.1
 
 Post-v0.1 work is intentionally separated from the first release:
 
@@ -715,7 +707,9 @@ Full release-readiness gate:
 bash scripts/release-readiness.sh
 ```
 
-The release gate verifies package identity/version/license, forbids workflow files under the current no-CI policy, runs rustfmt/tests/release build, checks all Bash scripts, smoke-tests contextual suggestions, generates Bash integration and syntax-checks it, builds a temporary Debian package, and verifies its package/version metadata.
+The release gate verifies package identity/version/license, forbids workflow files under the current no-CI policy, runs rustfmt/tests/release build, checks all Bash scripts, smoke-tests contextual suggestions and the install/uninstall lifecycle, generates Bash integration and syntax-checks it, builds a temporary Debian package, and verifies its package/version/content metadata.
+
+Because TermSense is a binary application, the final release also requires a generated and committed `Cargo.lock`. The first successful local Cargo build will generate it; the release gate will require it to be tracked before the release is finalized.
 
 ## CI policy
 
