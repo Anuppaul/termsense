@@ -52,6 +52,6 @@ exec bash
 | Right Arrow | Accept ghost suggestion |
 | Esc | Dismiss suggestions |
 | Ctrl+Space | Browse commands |
-| Enter | Execute normally in Bash |
+| Enter | Accept selected suggestion while the menu is visible; otherwise execute normally in Bash |
 
 See the README for full behavior, configuration, privacy details, and advanced examples.
