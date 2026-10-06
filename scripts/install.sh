@@ -128,11 +128,11 @@ _termsense_install_welcome() {
 
   local bold="" dim="" cyan="" green="" reset=""
   if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
-    printf -v bold '\\033[1m'
-    printf -v dim '\\033[2m'
-    printf -v cyan '\\033[36m'
-    printf -v green '\\033[32m'
-    printf -v reset '\\033[0m'
+    printf -v bold '\033[1m'
+    printf -v dim '\033[2m'
+    printf -v cyan '\033[36m'
+    printf -v green '\033[32m'
+    printf -v reset '\033[0m'
   fi
 
   printf '\n'
