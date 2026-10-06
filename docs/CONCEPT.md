@@ -223,7 +223,7 @@ Ranking must be deterministic for identical local state.
 
 Accepted suggestions may contribute a bounded local usage boost. TermSense stores only derived candidate keys by default, not raw shell history or complete command lines. Usage weighting must never overpower exact textual matches.
 
-Later versions may add typo tolerance and recency/decay, but exact/prefix behavior remains predictable.
+Frequency and recency are implemented as bounded boosts over privacy-safe derived keys. Later versions may add typo/fuzzy matching, but exact/prefix behavior remains predictable.
 
 ## 7. Architecture
 
@@ -280,7 +280,7 @@ The parser contract covers:
 - arithmetic `$((...))` exclusion from command routing;
 - absolute replacement byte ranges across separators, redirections, substitutions and groups.
 
-It deliberately does not claim to be a complete Bash parser. Heredoc bodies, arithmetic semantics, closed-group execution semantics and full shell AST semantics are separate future layers.
+It deliberately does not claim to be a complete Bash parser. Heredoc bodies are safely suppressed rather than interpreted as commands; arithmetic semantics, deeper closed-group execution semantics and full shell AST semantics remain separate future layers.
 
 ### Shell adapters
 
@@ -451,7 +451,7 @@ Installation layers are separated deliberately:
 
 Initial Debian package targets are amd64 and arm64. Package builds remain local while CI is intentionally disabled.
 
-A local release-readiness gate must validate formatting, tests, release build, Bash syntax, binary behavior, package identity and Debian package metadata without creating or invoking a CI workflow.
+A local release-readiness gate must validate formatting, tests, release build, Bash syntax, binary behavior, install/uninstall lifecycle, package identity and Debian package metadata without creating or invoking a CI workflow. A final binary release must also commit the generated Cargo.lock for reproducibility.
 
 ### Post-v0.1
 
