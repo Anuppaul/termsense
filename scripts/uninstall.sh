@@ -50,13 +50,16 @@ rm -f -- "$binary"
 
 if [[ -f "$bashrc" ]]; then
   temp="$(mktemp)"
+  trap 'rm -f -- "$temp"' EXIT
   awk '
     BEGIN { managed = 0 }
     /^# >>> termsense >>>$/ { managed = 1; next }
     /^# <<< termsense <<</ { managed = 0; next }
     managed == 0 { print }
   ' "$bashrc" > "$temp"
+  chmod --reference="$bashrc" "$temp" 2>/dev/null || true
   mv "$temp" "$bashrc"
+  trap - EXIT
 fi
 
 if (( purge )); then
