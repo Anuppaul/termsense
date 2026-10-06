@@ -77,6 +77,13 @@ binary="$bin_dir/termsense"
 mkdir -p "$bin_dir"
 install -m 0755 target/release/termsense "$binary"
 
+config_root="${XDG_CONFIG_HOME:-$HOME/.config}/termsense"
+config_file="$config_root/config.conf"
+mkdir -p "$config_root"
+if [[ ! -e "$config_file" ]]; then
+  install -m 0644 config/default.conf "$config_file"
+fi
+
 if (( enable_shell )); then
   mkdir -p "$(dirname -- "$bashrc")"
   touch "$bashrc"
@@ -107,6 +114,7 @@ fi
 "$binary" index >/dev/null 2>&1 || true
 
 printf 'TermSense installed: %s\n' "$binary"
+printf 'TermSense config: %s\n' "$config_file"
 if (( enable_shell )); then
   printf 'Bash integration managed in: %s\n' "$bashrc"
   printf 'Start a new Bash shell or run: source %q\n' "$bashrc"
