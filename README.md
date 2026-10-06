@@ -59,7 +59,11 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - richer typed positional values for find/grep/tar/curl;
 - process-substitution and command-group context routing;
 - ephemeral runtime caching for expensive dynamic Git/Docker/systemd providers;
-- local release-readiness gate with Rust, Bash, binary-smoke and Debian-package checks.
+- local release-readiness gate with Rust, Bash, binary-smoke and Debian-package checks;
+- heredoc-body suggestion suppression;
+- recursive SSH Include discovery with bounded local glob expansion;
+- adaptive ranking with bounded frequency + recency decay;
+- safe per-user config file for renderer behavior.
 
 The complete product contract is in [docs/CONCEPT.md](docs/CONCEPT.md).
 
@@ -208,6 +212,14 @@ $ type c
 
 Filesystem entries, SSH hosts, units and package names are only shown when they exist in the current machine's local data sources.
 
+SSH host discovery follows local `Include` directives recursively with a depth guard and visited-file set. Common include layouts such as:
+
+```text
+Include ~/.ssh/config.d/*.conf
+```
+
+are expanded locally. Wildcard `Host *` declarations are not surfaced as concrete host suggestions, and hashed known-host entries remain hidden.
+
 Pipeline and command separators route suggestions only inside the active right-hand segment:
 
 ```text
@@ -246,6 +258,16 @@ $ command 2>/dev/nu
 ```
 
 Descriptor duplication such as `2>&1` is recognized as descriptor syntax rather than a filesystem target.
+
+Heredoc bodies are treated as data, not shell command text:
+
+```text
+cat <<EOF
+plain text here
+EOF
+```
+
+TermSense keeps normal completion on the heredoc declaration line, suppresses suggestions while the cursor is inside an open heredoc body, and resumes command completion after the matching delimiter. `<<-EOF` tab-stripping delimiters are also recognized.
 
 Open command substitutions route completion to the innermost command while preserving the outer line:
 
@@ -335,7 +357,7 @@ Default install location:
 ~/.local/bin/termsense
 ```
 
-The installer builds the release binary, installs it, indexes local commands, and manages one idempotent block in `~/.bashrc`.
+The installer builds the release binary, installs it, creates the default user config only when missing, indexes local commands, and manages one idempotent block in `~/.bashrc`. Existing TermSense config is never overwritten.
 
 Useful variants:
 
@@ -379,7 +401,7 @@ Install it:
 sudo apt install ./dist/termsense_0.1.0_amd64.deb
 ```
 
-The Debian package installs the native binary under `/usr/bin/termsense` but deliberately does **not** modify a specific user's dotfiles while running as root. Enable Bash for the user explicitly:
+The Debian package installs the native binary under `/usr/bin/termsense` and a reference default config under `/usr/share/termsense/default.conf`, but deliberately does **not** modify a specific user's dotfiles while running as root. Enable Bash for the user explicitly:
 
 ```bash
 echo 'eval "$(termsense init bash)"' >> ~/.bashrc
@@ -443,17 +465,35 @@ Most Linux terminal emulators encode **Ctrl+Space** as the same control byte as 
 
 ## Configuration
 
-The first renderer exposes simple environment switches:
+User-local installs create this file only when it does not already exist:
 
-```bash
-export TERMSENSE_AUTO_SUGGEST=1
-export TERMSENSE_MAX_VISIBLE=5
-export TERMSENSE_GHOST=1
+```text
+~/.config/termsense/config.conf
 ```
 
-Set `TERMSENSE_AUTO_SUGGEST=0` to keep explicit `Ctrl+Space` discovery while disabling automatic popup refresh.
+or under `$XDG_CONFIG_HOME/termsense/config.conf`.
 
-Set `TERMSENSE_GHOST=0` to keep the list but hide inline ghost text.
+Default:
+
+```text
+auto_suggest=1
+max_visible=5
+ghost=1
+ctrl_space=1
+```
+
+The Bash adapter parses only these allowlisted keys. The config file is **not sourced or eval'd**.
+
+Environment variables override config-file values when already set:
+
+```bash
+export TERMSENSE_AUTO_SUGGEST=0
+export TERMSENSE_MAX_VISIBLE=8
+export TERMSENSE_GHOST=0
+export TERMSENSE_CTRL_SPACE=1
+```
+
+`max_visible` is clamped to 1–20. Set `ctrl_space=0` to leave Ctrl+Space unbound by TermSense.
 
 ## Optional fzf
 
@@ -594,16 +634,16 @@ docker-logs-schema:option:--follow
 These keys are stored locally under:
 
 ```text
-$XDG_STATE_HOME/termsense/usage-v1.json
+$XDG_STATE_HOME/termsense/usage-v2.json
 ```
 
 or:
 
 ```text
-~/.local/state/termsense/usage-v1.json
+~/.local/state/termsense/usage-v2.json
 ```
 
-They do not contain the complete typed command line. Usage boosts are deliberately capped so an exact textual match still outranks a merely frequent prefix match.
+They do not contain the complete typed command line. Ranking combines a bounded acceptance-frequency boost with a bounded recency boost. Recent accepted generic suggestions can rise within otherwise similar prefix matches, while exact textual matches still dominate.
 
 Dynamic identifiers are excluded from adaptive persistence entirely. TermSense does not put SSH hosts, filesystem paths, Git refs, Docker container names, systemd unit names, APT package names, or project-specific script/target names into the usage-ranking state. Those values are discovered transiently when relevant.
 
@@ -634,12 +674,11 @@ Multiline redraw hardening and broader shell/keymap compatibility also remain ac
 
 The next provider work extends the same generic context model with:
 
-- heredoc and richer closed-group/compound-shell semantics;
+- richer closed-group/compound-shell semantics beyond the active open-frame model;
 - more option-value schemas and positional argument models;
-- SSH Include-file expansion and additional safe local host sources;
+- additional safe local host sources beyond SSH config/known_hosts;
 - additional provider cache invalidation signals beyond short TTLs;
 - additional safe project manifests and task runners;
-- ranking decay/recency without storing raw shell history;
 - reproducible release metadata and signed package publishing.
 
 ## Local verification
