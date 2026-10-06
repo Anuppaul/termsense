@@ -34,7 +34,11 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - systemctl subcommand suggestions and local systemd unit discovery;
 - Docker subcommand suggestions and actual local container-name discovery;
 - real filesystem directory completion for `cd`, including `~/...` paths;
-- bounded local subprocesses for Git/Docker providers so provider failures do not hang the shell.
+- bounded local subprocesses for Git/Docker providers so provider failures do not hang the shell;
+- full-command suggestion display while retaining token-safe replacement;
+- generic Cargo subcommand intelligence;
+- local `package.json` script discovery for pnpm/npm/yarn/bun;
+- local Makefile target discovery.
 
 The complete product contract is in [docs/CONCEPT.md](docs/CONCEPT.md).
 
@@ -50,7 +54,19 @@ $ sys[temctl]
       systemd-analyze
 ```
 
-The bracketed part above represents dim ghost text.
+The bracketed part above represents dim ghost text. Suggestion rows show the **complete command**, not only the token being completed.
+
+For example:
+
+```text
+$ sudo git che[ckout]
+    > sudo git checkout
+      sudo git check-attr
+      sudo git check-ignore
+      sudo git check-ref-format
+```
+
+Internally TermSense still replaces only the active token, so the existing `sudo git ` prefix is preserved safely.
 
 Controls:
 
@@ -219,7 +235,25 @@ cd ~/Doc
       ~/Documents/           # only if that directory exists
 ```
 
-Static schemas contain only generic CLI vocabulary such as Git, systemctl, and Docker subcommands.
+Static schemas contain only generic CLI vocabulary such as Git, systemctl, Docker, and Cargo subcommands.
+
+Project-aware suggestions are also machine-derived. For example, inside a project TermSense can read local manifests:
+
+```text
+pnpm d
+     → pnpm dev          # only if "dev" exists in package.json
+
+npm run te
+        → npm run test   # only if "test" exists in package.json
+
+cargo bu
+      → cargo build
+
+make bu
+     → make build        # only if "build" exists in the discovered Makefile
+```
+
+TermSense reads these files; it does not execute project scripts merely to discover their names.
 
 ## Current Bash renderer boundary
 
@@ -231,11 +265,11 @@ This renderer is intentionally an initial vertical slice. Context-aware argument
 
 The next provider work extends the same generic context model with:
 
-- project tasks/scripts from local project manifests;
 - broader filesystem argument completion;
 - local history ranking;
 - richer option/flag schemas;
-- short-lived provider caches for expensive dynamic sources.
+- short-lived provider caches for expensive dynamic sources;
+- additional safe project manifests and task runners.
 
 ## Local verification
 
