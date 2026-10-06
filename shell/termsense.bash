@@ -227,7 +227,9 @@ _termsense_query() {
   byte_point="$(_termsense_byte_point)"
 
   local value display _kind _source _score start end usage_key description first=1
-  while IFS=
+  local tab
+  printf -v tab '\t'
+  while IFS="$tab" read -r value display _kind _source _score start end usage_key description; do
     [[ -n "$value" ]] || continue
 
     __TERMSENSE_CANDIDATES+=("$value")
