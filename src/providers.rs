@@ -1766,6 +1766,36 @@ mod tests {
     }
 
     #[test]
+    fn process_substitution_routes_to_inner_git_provider() {
+        let input = "diff <(git che";
+        let candidates =
+            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "diff <(git checkout"));
+    }
+
+    #[test]
+    fn paren_group_routes_to_inner_git_provider() {
+        let input = "( git che";
+        let candidates =
+            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "( git checkout"));
+    }
+
+    #[test]
+    fn brace_group_routes_to_inner_docker_provider() {
+        let input = "{ docker lo";
+        let candidates =
+            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "{ docker logs"));
+    }
+
+    #[test]
     fn pipeline_routes_to_right_hand_command() {
         let commands = vec![crate::CommandEntry {
             name: "grep".to_owned(),
