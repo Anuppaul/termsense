@@ -49,7 +49,7 @@ _termsense_refresh_shell_context() {
   filtered=()
   mapfile -t values < <(compgen -A function 2>/dev/null)
   for name in "${values[@]}"; do
-    [[ "$name" == _termsense_* ]] || filtered+=("$name")
+    [[ "$name" == _* ]] || filtered+=("$name")
   done
   if (("${#filtered[@]}" > 0)); then
     printf -v TERMSENSE_SHELL_FUNCTIONS '%s\n' "${filtered[@]}"
