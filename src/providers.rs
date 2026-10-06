@@ -10,7 +10,7 @@ use std::{
     env, fs,
     hash::{Hash, Hasher},
     io::Read,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
     time::Duration,
@@ -1226,20 +1226,51 @@ fn directory_query(input: &str) -> Option<(PathBuf, String, String)> {
 }
 
 fn ssh_hosts() -> Vec<String> {
+    if let Some(cached) = runtime_cache::load_lines("ssh-hosts-v1", Duration::from_secs(5)) {
+        return cached;
+    }
+
     let Some(home) = env::var_os("HOME").map(PathBuf::from) else {
         return Vec::new();
     };
 
     let mut hosts = BTreeSet::new();
-    parse_ssh_config(&home.join(".ssh/config"), &mut hosts);
+    let mut visited = BTreeSet::new();
+    parse_ssh_config(
+        &home.join(".ssh/config"),
+        &home,
+        &mut hosts,
+        &mut visited,
+        0,
+    );
     parse_known_hosts(&home.join(".ssh/known_hosts"), &mut hosts);
-    hosts.into_iter().collect()
+
+    let values: Vec<String> = hosts.into_iter().collect();
+    runtime_cache::store_lines("ssh-hosts-v1", &values);
+    values
 }
 
-fn parse_ssh_config(path: &PathBuf, hosts: &mut BTreeSet<String>) {
+fn parse_ssh_config(
+    path: &Path,
+    home: &Path,
+    hosts: &mut BTreeSet<String>,
+    visited: &mut BTreeSet<PathBuf>,
+    depth: usize,
+) {
+    if depth > 6 {
+        return;
+    }
+
+    let identity = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if !visited.insert(identity) {
+        return;
+    }
+
     let Ok(raw) = fs::read_to_string(path) else {
         return;
     };
+
+    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
 
     for line in raw.lines() {
         let line = line.trim();
@@ -1251,17 +1282,97 @@ fn parse_ssh_config(path: &PathBuf, hosts: &mut BTreeSet<String>) {
         let Some(keyword) = parts.next() else {
             continue;
         };
-        if !keyword.eq_ignore_ascii_case("host") {
+
+        if keyword.eq_ignore_ascii_case("host") {
+            for host in parts {
+                if host.starts_with('!') || host.contains('*') || host.contains('?') {
+                    continue;
+                }
+                hosts.insert(host.to_owned());
+            }
             continue;
         }
 
-        for host in parts {
-            if host.starts_with('!') || host.contains('*') || host.contains('?') {
-                continue;
+        if keyword.eq_ignore_ascii_case("include") {
+            for pattern in parts {
+                for include in expand_ssh_include(pattern, base_dir, home) {
+                    parse_ssh_config(&include, home, hosts, visited, depth + 1);
+                }
             }
-            hosts.insert(host.to_owned());
         }
     }
+}
+
+fn expand_ssh_include(pattern: &str, base_dir: &Path, home: &Path) -> Vec<PathBuf> {
+    let expanded = if pattern == "~" {
+        home.to_path_buf()
+    } else if let Some(rest) = pattern.strip_prefix("~/") {
+        home.join(rest)
+    } else {
+        let candidate = PathBuf::from(pattern);
+        if candidate.is_absolute() {
+            candidate
+        } else {
+            base_dir.join(candidate)
+        }
+    };
+
+    let Some(file_name) = expanded.file_name().and_then(|value| value.to_str()) else {
+        return Vec::new();
+    };
+
+    if !file_name.contains('*') && !file_name.contains('?') {
+        return vec![expanded];
+    }
+
+    let parent = expanded.parent().unwrap_or_else(|| Path::new("."));
+    let Ok(entries) = fs::read_dir(parent) else {
+        return Vec::new();
+    };
+
+    let mut matches = Vec::new();
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if wildcard_match(file_name, &name) && entry.path().is_file() {
+            matches.push(entry.path());
+        }
+    }
+    matches.sort();
+    matches
+}
+
+fn wildcard_match(pattern: &str, value: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let value = value.as_bytes();
+    let mut p = 0;
+    let mut v = 0;
+    let mut star = None;
+    let mut retry = 0;
+
+    while v < value.len() {
+        if p < pattern.len() && (pattern[p] == b'?' || pattern[p] == value[v]) {
+            p += 1;
+            v += 1;
+        } else if p < pattern.len() && pattern[p] == b'*' {
+            star = Some(p);
+            p += 1;
+            retry = v;
+        } else if let Some(star_index) = star {
+            p = star_index + 1;
+            retry += 1;
+            v = retry;
+        } else {
+            return false;
+        }
+    }
+
+    while p < pattern.len() && pattern[p] == b'*' {
+        p += 1;
+    }
+
+    p == pattern.len()
 }
 
 fn parse_known_hosts(path: &PathBuf, hosts: &mut BTreeSet<String>) {
@@ -1739,6 +1850,13 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "which docker"));
+    }
+
+    #[test]
+    fn ssh_include_wildcard_matching_is_bounded_and_predictable() {
+        assert!(super::wildcard_match("*.conf", "work.conf"));
+        assert!(super::wildcard_match("host-??", "host-01"));
+        assert!(!super::wildcard_match("*.conf", "work.txt"));
     }
 
     #[test]
