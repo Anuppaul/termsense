@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/Anuppaul/termsense/blob/main/CONTRIBUTING.md
+    about: Read the contribution workflow and project invariants before starting larger changes.
