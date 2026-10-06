@@ -104,11 +104,13 @@ fi
 stage="$(mktemp -d)"
 trap 'rm -rf -- "$stage"' EXIT
 
-mkdir -p   "$stage/DEBIAN"   "$stage/usr/bin"   "$stage/usr/share/doc/termsense"
+mkdir -p   "$stage/DEBIAN"   "$stage/usr/bin"   "$stage/usr/share/doc/termsense" \
+  "$stage/usr/share/termsense"
 
 install -m 0755 target/release/termsense "$stage/usr/bin/termsense"
 install -m 0644 README.md "$stage/usr/share/doc/termsense/README.md"
 install -m 0644 LICENSE "$stage/usr/share/doc/termsense/copyright"
+install -m 0644 config/default.conf "$stage/usr/share/termsense/default.conf"
 
 cat > "$stage/DEBIAN/control" <<EOF
 Package: termsense
