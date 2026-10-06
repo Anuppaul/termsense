@@ -2733,7 +2733,9 @@ fn candidate_description(source: &str, kind: &str, value: &str) -> &'static str 
             "--exclude-dir=" => "Skip directories whose names match the pattern",
             "--file=" | "-f" => "Read search patterns from the specified file",
             "--files-with-matches" | "-l" => "Print only names of files containing matches",
-            "--fixed-strings" | "-F" => "Treat patterns as literal strings, not regular expressions",
+            "--fixed-strings" | "-F" => {
+                "Treat patterns as literal strings, not regular expressions"
+            }
             "--ignore-case" | "-i" => "Ignore letter case while matching",
             "--include=" => "Search only files whose names match the pattern",
             "--invert-match" | "-v" => "Select lines that do not match",
@@ -2770,7 +2772,9 @@ fn candidate_description(source: &str, kind: &str, value: &str) -> &'static str 
         },
         "curl-schema" => match value {
             "--cacert" => "Verify TLS using the specified CA certificate file",
-            "--compressed" => "Request compressed content and decompress the response automatically",
+            "--compressed" => {
+                "Request compressed content and decompress the response automatically"
+            }
             "--connect-timeout" => "Limit how long curl may spend establishing a connection",
             "--data" | "-d" => "Send data in the HTTP request body",
             "--data-raw" => "Send request data without treating @ specially",
@@ -3047,24 +3051,59 @@ mod tests {
             all.description,
             "Stage modified and deleted tracked files before committing"
         );
-        assert_eq!(amend.description, "Replace the tip commit with a new commit");
+        assert_eq!(
+            amend.description,
+            "Replace the tip commit with a new commit"
+        );
     }
 
     #[test]
     fn dedicated_option_schemas_do_not_fall_back_to_generic_labels() {
         let schemas: &[(&[&str], &str, &str)] = &[
-            (super::GIT_COMMIT_OPTIONS, "git-commit-schema", "Git commit behavior"),
-            (super::GIT_CHECKOUT_OPTIONS, "git-checkout-schema", "Git checkout behavior"),
-            (super::GIT_SWITCH_OPTIONS, "git-switch-schema", "Git switch behavior"),
+            (
+                super::GIT_COMMIT_OPTIONS,
+                "git-commit-schema",
+                "Git commit behavior",
+            ),
+            (
+                super::GIT_CHECKOUT_OPTIONS,
+                "git-checkout-schema",
+                "Git checkout behavior",
+            ),
+            (
+                super::GIT_SWITCH_OPTIONS,
+                "git-switch-schema",
+                "Git switch behavior",
+            ),
             (super::GIT_LOG_OPTIONS, "git-log-schema", "Git log behavior"),
-            (super::SYSTEMCTL_GLOBAL_OPTIONS, "systemctl-schema", "systemctl behavior"),
-            (super::DOCKER_LOGS_OPTIONS, "docker-logs-schema", "Docker logs behavior"),
-            (super::DOCKER_PS_OPTIONS, "docker-ps-schema", "Docker ps behavior"),
-            (super::DOCKER_EXEC_OPTIONS, "docker-exec-schema", "Docker exec behavior"),
+            (
+                super::SYSTEMCTL_GLOBAL_OPTIONS,
+                "systemctl-schema",
+                "systemctl behavior",
+            ),
+            (
+                super::DOCKER_LOGS_OPTIONS,
+                "docker-logs-schema",
+                "Docker logs behavior",
+            ),
+            (
+                super::DOCKER_PS_OPTIONS,
+                "docker-ps-schema",
+                "Docker ps behavior",
+            ),
+            (
+                super::DOCKER_EXEC_OPTIONS,
+                "docker-exec-schema",
+                "Docker exec behavior",
+            ),
             (super::CARGO_BUILD_OPTIONS, "cargo-schema", "Cargo behavior"),
             (super::CARGO_TEST_OPTIONS, "cargo-schema", "Cargo behavior"),
             (super::APT_OPTIONS, "apt-schema", "APT behavior"),
-            (super::JOURNALCTL_OPTIONS, "journalctl-schema", "journalctl behavior"),
+            (
+                super::JOURNALCTL_OPTIONS,
+                "journalctl-schema",
+                "journalctl behavior",
+            ),
             (super::SSH_OPTIONS, "ssh-schema", "SSH behavior"),
             (super::SUDO_OPTIONS, "sudo-schema", "sudo behavior"),
             (super::FIND_OPTIONS, "find-schema", "find behavior"),
