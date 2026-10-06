@@ -2248,30 +2248,37 @@ fn candidate_description(source: &str, kind: &str, value: &str) -> &'static str 
         "man-cache" => "Option discovered from the local man page",
         "git-schema" => match value {
             "add" => "Stage file changes for the next commit",
-            "branch" => "List, create, or delete branches",
+            "bisect" => "Binary-search commit history to find where a bug was introduced",
+            "branch" => "List, create, rename, or delete branches",
+            "check-attr" => "Show gitattributes values for files or paths",
+            "check-ignore" => "Show whether paths are excluded by Git ignore rules",
+            "check-ref-format" => "Validate or normalize a Git reference name",
             "checkout" => "Switch branches or restore files",
-            "cherry-pick" => "Apply an existing commit",
+            "cherry-pick" => "Apply an existing commit onto the current branch",
             "clone" => "Copy a remote repository locally",
             "commit" => "Record staged changes in Git history",
-            "diff" => "Show changes between Git states",
+            "diff" => "Show changes between working tree, index, commits, or refs",
             "fetch" => "Download refs and objects from a remote",
+            "grep" => "Search tracked files or revisions for matching text",
             "init" => "Create a new Git repository",
             "log" => "Show commit history",
-            "merge" => "Combine another branch into the current one",
-            "pull" => "Fetch and integrate remote changes",
-            "push" => "Upload local commits to a remote",
-            "rebase" => "Replay commits onto another base",
-            "remote" => "Manage remote repositories",
-            "reset" => "Move HEAD or reset tracked changes",
-            "restore" => "Restore working-tree files",
-            "revert" => "Create a commit that undoes another commit",
-            "show" => "Show details of a Git object",
-            "stash" => "Temporarily save uncommitted changes",
-            "status" => "Show working tree and staging status",
+            "merge" => "Combine another branch into the current branch",
+            "mv" => "Move or rename a tracked file and stage the change",
+            "pull" => "Fetch remote changes and integrate them locally",
+            "push" => "Upload local commits and refs to a remote",
+            "rebase" => "Replay commits onto a different base commit",
+            "remote" => "Manage named remote repositories",
+            "reset" => "Move HEAD or reset index and working-tree state",
+            "restore" => "Restore file contents from the index or another tree",
+            "revert" => "Create a commit that reverses an earlier commit",
+            "rm" => "Remove tracked files and stage their deletion",
+            "show" => "Show details and changes for a Git object",
+            "stash" => "Temporarily save uncommitted working-tree changes",
+            "status" => "Show working-tree and staging-area status",
             "switch" => "Switch to another branch",
-            "tag" => "Create or manage Git tags",
-            "worktree" => "Manage multiple working trees",
-            _ => "Git subcommand",
+            "tag" => "Create, list, delete, or verify Git tags",
+            "worktree" => "Manage multiple working trees attached to one repository",
+            _ => "Git behavior",
         },
         "git-commit-schema" => match value {
             "--all" => "Stage modified and deleted tracked files before committing",
@@ -3027,9 +3034,54 @@ mod tests {
     #[test]
     fn git_commit_flags_are_contextual() {
         let candidates = super::suggest(&[], &UsageState::default(), "git commit --a", 14, 20);
-        assert!(candidates
+        let all = candidates
             .iter()
-            .any(|candidate| candidate.display_text == "git commit --amend"));
+            .find(|candidate| candidate.insert_text == "--all")
+            .expect("--all candidate");
+        let amend = candidates
+            .iter()
+            .find(|candidate| candidate.insert_text == "--amend")
+            .expect("--amend candidate");
+
+        assert_eq!(
+            all.description,
+            "Stage modified and deleted tracked files before committing"
+        );
+        assert_eq!(amend.description, "Replace the tip commit with a new commit");
+    }
+
+    #[test]
+    fn dedicated_option_schemas_do_not_fall_back_to_generic_labels() {
+        let schemas: &[(&[&str], &str, &str)] = &[
+            (GIT_COMMIT_OPTIONS, "git-commit-schema", "Git commit behavior"),
+            (GIT_CHECKOUT_OPTIONS, "git-checkout-schema", "Git checkout behavior"),
+            (GIT_SWITCH_OPTIONS, "git-switch-schema", "Git switch behavior"),
+            (GIT_LOG_OPTIONS, "git-log-schema", "Git log behavior"),
+            (SYSTEMCTL_GLOBAL_OPTIONS, "systemctl-schema", "systemctl behavior"),
+            (DOCKER_LOGS_OPTIONS, "docker-logs-schema", "Docker logs behavior"),
+            (DOCKER_PS_OPTIONS, "docker-ps-schema", "Docker ps behavior"),
+            (DOCKER_EXEC_OPTIONS, "docker-exec-schema", "Docker exec behavior"),
+            (CARGO_BUILD_OPTIONS, "cargo-schema", "Cargo behavior"),
+            (CARGO_TEST_OPTIONS, "cargo-schema", "Cargo behavior"),
+            (APT_OPTIONS, "apt-schema", "APT behavior"),
+            (JOURNALCTL_OPTIONS, "journalctl-schema", "journalctl behavior"),
+            (SSH_OPTIONS, "ssh-schema", "SSH behavior"),
+            (SUDO_OPTIONS, "sudo-schema", "sudo behavior"),
+            (FIND_OPTIONS, "find-schema", "find behavior"),
+            (GREP_OPTIONS, "grep-schema", "grep behavior"),
+            (TAR_OPTIONS, "tar-schema", "tar behavior"),
+            (CURL_OPTIONS, "curl-schema", "curl behavior"),
+        ];
+
+        for (values, source, fallback) in schemas {
+            for value in *values {
+                assert_ne!(
+                    super::candidate_description(source, "option", value),
+                    *fallback,
+                    "{source} {value} must have a behavior-specific description"
+                );
+            }
+        }
     }
 
     #[test]
