@@ -82,6 +82,9 @@ mod tests {
     #[test]
     fn rejects_path_traversal_keys() {
         assert!(cache_path("../secret").is_none());
-        assert!(cache_path("docker-containers-v1").is_some() || std::env::var_os("XDG_RUNTIME_DIR").is_none());
+        assert!(
+            cache_path("docker-containers-v1").is_some()
+                || std::env::var_os("XDG_RUNTIME_DIR").is_none()
+        );
     }
 }
