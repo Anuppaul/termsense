@@ -178,6 +178,10 @@ _termsense_restore_navigation() {
   _termsense_restore_binding "$__TERMSENSE_BIND_LEFT" '\e[D'
   _termsense_restore_binding "$__TERMSENSE_BIND_TAB" '\C-i'
   _termsense_restore_binding "$__TERMSENSE_BIND_ESC" '\e'
+  _termsense_restore_binding "$__TERMSENSE_BIND_ENTER_CR" '\C-m'
+  _termsense_restore_binding "$__TERMSENSE_BIND_ENTER_LF" '\C-j'
+  _termsense_restore_binding "$__TERMSENSE_BIND_INTERNAL_CLEAN" '\C-x\C-y'
+  _termsense_restore_binding "$__TERMSENSE_BIND_INTERNAL_ACCEPT" '\C-x\C-z'
 }
 
 _termsense_activate_navigation() {
@@ -187,6 +191,10 @@ _termsense_activate_navigation() {
   bind -x '"\e[D":_termsense_move_left' 2>/dev/null || true
   bind -x '"\C-i":_termsense_accept_selected' 2>/dev/null || true
   bind -x '"\e":_termsense_dismiss' 2>/dev/null || true
+  bind -x '"\C-x\C-y":_termsense_before_accept' 2>/dev/null || true
+  bind '"\C-x\C-z": accept-line' 2>/dev/null || true
+  bind '"\C-m": "\C-x\C-y\C-x\C-z"' 2>/dev/null || true
+  bind '"\C-j": "\C-x\C-y\C-x\C-z"' 2>/dev/null || true
 }
 
 _termsense_reset_state() {
@@ -316,6 +324,12 @@ _termsense_refresh() {
   fi
 }
 
+_termsense_before_accept() {
+  __TERMSENSE_PALETTE_ACTIVE=0
+  _termsense_clear_overlay
+  _termsense_reset_state
+}
+
 _termsense_accept_selected() {
   local total=${#__TERMSENSE_CANDIDATES[@]}
   (( total > 0 )) || return 0
@@ -402,6 +416,10 @@ __TERMSENSE_BIND_RIGHT="$(_termsense_capture_binding '\e[C')"
 __TERMSENSE_BIND_LEFT="$(_termsense_capture_binding '\e[D')"
 __TERMSENSE_BIND_TAB="$(_termsense_capture_binding '\C-i')"
 __TERMSENSE_BIND_ESC="$(_termsense_capture_binding '\e')"
+__TERMSENSE_BIND_ENTER_CR="$(_termsense_capture_binding '\C-m')"
+__TERMSENSE_BIND_ENTER_LF="$(_termsense_capture_binding '\C-j')"
+__TERMSENSE_BIND_INTERNAL_CLEAN="$(_termsense_capture_binding '\C-x\C-y')"
+__TERMSENSE_BIND_INTERNAL_ACCEPT="$(_termsense_capture_binding '\C-x\C-z')"
 
 bind -x '"\C-x\C-t":_termsense_refresh'
 
