@@ -316,7 +316,7 @@ The Bash adapter owns:
 
 The integration must preserve normal Readline behavior and avoid stealing standard shortcuts except the documented TermSense bindings.
 
-Automatic per-keystroke UI will be implemented incrementally: the engine API is built first, then the Bash renderer/keybinding layer adds live refresh without coupling ranking logic to Readline.
+Automatic per-keystroke UI is implemented through the Bash adapter while ranking and provider logic remain isolated in the Rust engine. The adapter owns Readline hooks and rendering; the engine remains shell-UI agnostic.
 
 ## 9. Indexing strategy
 
@@ -332,11 +332,9 @@ Rules:
 - never execute the binary during base indexing;
 - refresh when PATH fingerprint changes or on explicit `termsense index`.
 
-### History
+### Adaptive usage
 
-History can improve ranking but must be optional and local.
-
-TermSense should store minimal derived usage data rather than copying the user's entire shell history into a new database where possible.
+TermSense does not import raw shell history for v0.1. It stores only bounded, privacy-safe derived keys for suggestions the user explicitly accepts, with frequency and recency metadata. Machine-specific dynamic identifiers remain excluded from persistent adaptive state.
 
 ### Cache
 
@@ -407,7 +405,8 @@ The renderer should debounce expensive context refreshes while keeping prefix fi
 - Up/Down selection;
 - Tab / Right Arrow acceptance;
 - Esc dismissal;
-- robust redraw around resize, prompt changes and multiline input.
+- prompt-safe overlay cleanup and normal command acceptance;
+- advanced multiline/resize hardening deferred to post-v0.1.
 
 ### Slice 3 — context providers
 
@@ -455,6 +454,7 @@ A local release-readiness gate must validate formatting, tests, release build, B
 
 ### Post-v0.1
 
+- advanced multiline redraw and broader Readline/vi-keymap compatibility;
 - deeper closed compound-shell AST semantics;
 - additional specialized provider schemas and project adapters;
 - smarter cache invalidation signals;
