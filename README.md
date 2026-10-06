@@ -50,7 +50,10 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - nested sudo context, including local user/group completion and nested command routing;
 - common Linux CLI schemas for find, grep, tar and curl;
 - option-value path completion such as ssh -i, tar -f and curl -o;
-- command-name argument intelligence for which/whereis/type/command/man.
+- command-name argument intelligence for which/whereis/type/command/man;
+- active command-segment parsing across pipes, &&, ||, semicolons and background separators;
+- native user-local install/uninstall scripts;
+- local Debian package builder for amd64/arm64.
 
 The complete product contract is in [docs/CONCEPT.md](docs/CONCEPT.md).
 
@@ -199,6 +202,26 @@ $ type c
 
 Filesystem entries, SSH hosts, units and package names are only shown when they exist in the current machine's local data sources.
 
+Pipeline and command separators route suggestions only inside the active right-hand segment:
+
+```text
+$ cat file | gre
+    > cat file | grep
+
+$ git status && docker lo
+    > git status && docker login
+      git status && docker logout
+      git status && docker logs
+
+$ pwd; cd ~/Doc
+    > pwd; cd ~/Documents/
+
+$ grep "a|b" fi
+    > grep "a|b" file.txt
+```
+
+Separators inside quotes or escaped separators are not treated as command boundaries.
+
 Controls:
 
 | Key | Action |
@@ -212,6 +235,73 @@ Controls:
 | Enter | normal Bash execution |
 
 At an empty prompt, TermSense intentionally stays quiet. Press `Ctrl+Space` to browse commands explicitly.
+
+## Install from source
+
+For a native user-local install:
+
+```bash
+bash scripts/install.sh
+```
+
+Default install location:
+
+```text
+~/.local/bin/termsense
+```
+
+The installer builds the release binary, installs it, indexes local commands, and manages one idempotent block in `~/.bashrc`.
+
+Useful variants:
+
+```bash
+bash scripts/install.sh --no-shell
+bash scripts/install.sh --prefix /custom/prefix
+bash scripts/install.sh --skip-build
+```
+
+Uninstall:
+
+```bash
+bash scripts/uninstall.sh
+```
+
+Remove binary, Bash integration, cache/state/config:
+
+```bash
+bash scripts/uninstall.sh --purge
+```
+
+The installer/uninstaller preserve the existing Bash rc file permissions.
+
+## Debian package
+
+Build a local `.deb`:
+
+```bash
+bash scripts/package-deb.sh
+```
+
+Output example:
+
+```text
+dist/termsense_0.1.0_amd64.deb
+```
+
+Install it:
+
+```bash
+sudo apt install ./dist/termsense_0.1.0_amd64.deb
+```
+
+The Debian package installs the native binary under `/usr/bin/termsense` but deliberately does **not** modify a specific user's dotfiles while running as root. Enable Bash for the user explicitly:
+
+```bash
+echo 'eval "$(termsense init bash)"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+The package builder auto-maps `x86_64 → amd64` and `aarch64/arm64 → arm64`. No GitHub Actions or remote build service is involved.
 
 ## Build locally
 
@@ -431,7 +521,9 @@ Only installed `d...` commands are candidates. If `docker` is repeatedly accepte
 
 The automatic renderer hooks ASCII printable keystrokes through Readline macros so it can refresh after normal insertion. Bracketed paste remains handled by Readline as a single paste operation. Non-ASCII input remains native Bash input and can still use explicit Ctrl+Space discovery.
 
-The parser now understands open single/double quotes and backslash-escaped characters for the active token. It is still deliberately not a full Bash AST: pipelines, command substitutions, heredocs and every compound-shell grammar form remain future parser work.
+The parser now understands open single/double quotes, backslash-escaped characters, and active segments separated by `|`, `&&`, `||`, `;`, or background `&`. Separator characters inside quotes or escaped separators do not split the active context.
+
+It is still deliberately not a full Bash AST: command substitution, heredocs, grouping/subshell syntax, redirections and every compound-shell grammar form remain future parser work.
 
 Multiline redraw hardening and broader shell/keymap compatibility also remain active implementation work.
 
@@ -439,12 +531,13 @@ Multiline redraw hardening and broader shell/keymap compatibility also remain ac
 
 The next provider work extends the same generic context model with:
 
-- pipeline/command-separator aware parsing;
+- redirection and command-substitution aware parsing;
 - more option-value schemas and positional argument models;
 - SSH Include-file expansion and additional safe local host sources;
 - short-lived caches for more expensive dynamic providers;
 - additional safe project manifests and task runners;
-- ranking decay/recency without storing raw shell history.
+- ranking decay/recency without storing raw shell history;
+- reproducible release metadata and signed package publishing.
 
 ## Local verification
 
@@ -456,6 +549,9 @@ Run development checks locally:
 cargo fmt --check
 cargo test
 bash -n shell/termsense.bash
+bash -n scripts/install.sh
+bash -n scripts/uninstall.sh
+bash -n scripts/package-deb.sh
 ```
 
 ## CI policy
