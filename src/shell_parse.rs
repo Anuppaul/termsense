@@ -23,6 +23,9 @@ pub(crate) struct ActiveContext {
 enum FrameKind {
     DollarParen,
     Backtick,
+    ProcessSub,
+    GroupParen,
+    BraceGroup,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -39,8 +42,8 @@ enum Lexeme {
 }
 
 pub(crate) fn active_context(buffer: &str, cursor: usize) -> ActiveContext {
-    let substitution_start = active_substitution_start(buffer, cursor);
-    let segment_start = active_segment_start_from(buffer, substitution_start, cursor);
+    let nested_start = active_nested_start(buffer, cursor);
+    let segment_start = active_segment_start_from(buffer, nested_start, cursor);
     let lexemes = lex_range(buffer, segment_start, cursor);
     let trailing_space = buffer[..cursor]
         .chars()
@@ -121,11 +124,11 @@ pub(crate) fn tokens_before_cursor(buffer: &str, cursor: usize) -> Vec<Token> {
 }
 
 pub(crate) fn active_segment_start(buffer: &str, cursor: usize) -> usize {
-    let base = active_substitution_start(buffer, cursor);
+    let base = active_nested_start(buffer, cursor);
     active_segment_start_from(buffer, base, cursor)
 }
 
-fn active_substitution_start(buffer: &str, cursor: usize) -> usize {
+fn active_nested_start(buffer: &str, cursor: usize) -> usize {
     let before = &buffer[..cursor];
     let mut frames: Vec<Frame> = Vec::new();
     let mut quote = QuoteStyle::None;
@@ -168,7 +171,467 @@ fn active_substitution_start(buffer: &str, cursor: usize) -> usize {
             continue;
         }
 
-        if ch == '$' {
+        if ch == '
+            if quote == QuoteStyle::None
+                && frames.last().is_some_and(|frame| frame.kind == FrameKind::Backtick)
+            {
+                let frame = frames.pop().expect("frame");
+                quote = frame.outer_quote;
+            } else {
+                frames.push(Frame {
+                    kind: FrameKind::Backtick,
+                    start: offset + ch.len_utf8(),
+                    outer_quote: quote,
+                });
+                quote = QuoteStyle::None;
+            }
+        }
+    }
+
+    frames.last().map(|frame| frame.start).unwrap_or(0)
+}
+
+fn active_segment_start_from(buffer: &str, base: usize, cursor: usize) -> usize {
+    let before = &buffer[base..cursor];
+    let mut quote = QuoteStyle::None;
+    let mut escaped = false;
+    let mut last_boundary = base;
+    let mut iter = before.char_indices().peekable();
+
+    while let Some((relative_offset, ch)) = iter.next() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        match quote {
+            QuoteStyle::Single => {
+                if ch == '\'' {
+                    quote = QuoteStyle::None;
+                }
+                continue;
+            }
+            QuoteStyle::Double => {
+                if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    quote = QuoteStyle::None;
+                }
+                continue;
+            }
+            QuoteStyle::None => {}
+        }
+
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '\'' {
+            quote = QuoteStyle::Single;
+            continue;
+        }
+        if ch == '"' {
+            quote = QuoteStyle::Double;
+            continue;
+        }
+
+        if ch == '&' {
+            let absolute = base + relative_offset;
+            let previous_is_redirect = absolute > base
+                && buffer.as_bytes().get(absolute - 1).is_some_and(|byte| *byte == b'>');
+            if previous_is_redirect || iter.peek().is_some_and(|(_, next)| *next == '>') {
+                continue;
+            }
+        }
+
+        if matches!(ch, ';' | '|' | '&') {
+            let mut boundary = base + relative_offset + ch.len_utf8();
+
+            if matches!(ch, '|' | '&') {
+                if let Some((next_relative, next)) = iter.peek().copied() {
+                    if next == ch {
+                        iter.next();
+                        boundary = base + next_relative + next.len_utf8();
+                    }
+                }
+            }
+
+            last_boundary = boundary;
+        }
+    }
+
+    let mut start = last_boundary;
+    while start < cursor {
+        let Some(ch) = buffer[start..cursor].chars().next() else {
+            break;
+        };
+        if !ch.is_whitespace() {
+            break;
+        }
+        start += ch.len_utf8();
+    }
+    start
+}
+
+fn lex_range(buffer: &str, start: usize, cursor: usize) -> Vec<Lexeme> {
+    let before = &buffer[start..cursor];
+    let mut lexemes = Vec::new();
+    let mut iter = before.char_indices().peekable();
+
+    while let Some((relative_index, ch)) = iter.peek().copied() {
+        if ch.is_whitespace() {
+            iter.next();
+            continue;
+        }
+
+        let remaining = &before[relative_index..];
+        if let Some(length) = redirection_operator_len(remaining) {
+            for _ in 0..length {
+                iter.next();
+            }
+            lexemes.push(Lexeme::Redirection {
+                needs_path: redirection_needs_path(&remaining[..length]),
+            });
+            continue;
+        }
+
+        let raw_start = start + relative_index;
+        let mut replacement_start = raw_start;
+        let mut end = raw_start;
+        let mut text = String::new();
+        let mut quote = QuoteStyle::None;
+        let mut active_quote = QuoteStyle::None;
+
+        if ch == '\'' || ch == '"' {
+            iter.next();
+            replacement_start = raw_start + ch.len_utf8();
+            end = replacement_start;
+            quote = if ch == '\'' {
+                QuoteStyle::Single
+            } else {
+                QuoteStyle::Double
+            };
+            active_quote = quote;
+        }
+
+        while let Some((relative_offset, current)) = iter.peek().copied() {
+            if active_quote == QuoteStyle::None && current.is_whitespace() {
+                break;
+            }
+            if active_quote == QuoteStyle::None && matches!(current, ';' | '|' | '&') {
+                if current == '&' {
+                    let rem = &before[relative_offset..];
+                    if redirection_operator_len(rem).is_some() {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            if active_quote == QuoteStyle::None {
+                let rem = &before[relative_offset..];
+                if redirection_operator_len(rem).is_some() {
+                    break;
+                }
+            }
+
+            iter.next();
+            let absolute_offset = start + relative_offset;
+            end = absolute_offset + current.len_utf8();
+
+            match active_quote {
+                QuoteStyle::Single => {
+                    if current == '\'' {
+                        active_quote = QuoteStyle::None;
+                        end = absolute_offset;
+                        break;
+                    }
+                    text.push(current);
+                }
+                QuoteStyle::Double => {
+                    if current == '"' {
+                        active_quote = QuoteStyle::None;
+                        end = absolute_offset;
+                        break;
+                    }
+                    if current == '\\' {
+                        if let Some((next_relative, next)) = iter.peek().copied() {
+                            iter.next();
+                            end = start + next_relative + next.len_utf8();
+                            text.push(next);
+                        } else {
+                            text.push(current);
+                        }
+                    } else {
+                        text.push(current);
+                    }
+                }
+                QuoteStyle::None => {
+                    if current == '\\' {
+                        if let Some((next_relative, next)) = iter.peek().copied() {
+                            iter.next();
+                            end = start + next_relative + next.len_utf8();
+                            text.push(next);
+                        } else {
+                            text.push(current);
+                        }
+                    } else if current == '\'' {
+                        active_quote = QuoteStyle::Single;
+                    } else if current == '"' {
+                        active_quote = QuoteStyle::Double;
+                    } else {
+                        text.push(current);
+                    }
+                }
+            }
+        }
+
+        lexemes.push(Lexeme::Word(Token {
+            text,
+            start: replacement_start,
+            end,
+            quote,
+        }));
+    }
+
+    lexemes
+}
+
+fn redirection_operator_len(input: &str) -> Option<usize> {
+    let bytes = input.as_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+
+    if bytes.starts_with(b"&>>") {
+        return Some(3);
+    }
+    if bytes.starts_with(b"&>") {
+        return Some(2);
+    }
+
+    let mut index = 0;
+    while index < bytes.len() && bytes[index].is_ascii_digit() {
+        index += 1;
+    }
+
+    if index >= bytes.len() || !matches!(bytes[index], b'<' | b'>') {
+        return None;
+    }
+
+    let op = bytes[index];
+    index += 1;
+
+    if index < bytes.len() && bytes[index] == op {
+        index += 1;
+        if op == b'<' && index < bytes.len() && bytes[index] == b'<' {
+            index += 1;
+        }
+    } else if index < bytes.len()
+        && ((op == b'>' && matches!(bytes[index], b'&' | b'|'))
+            || (op == b'<' && bytes[index] == b'>'))
+    {
+        index += 1;
+    }
+
+    Some(index)
+}
+
+fn redirection_needs_path(operator: &str) -> bool {
+    if operator.contains(">&") {
+        return false;
+    }
+    if operator.ends_with("<<") || operator.ends_with("<<<") {
+        return false;
+    }
+    true
+}
+
+pub(crate) fn quote_candidate(value: &str, quote: QuoteStyle) -> Option<String> {
+    match quote {
+        QuoteStyle::None => Some(escape_unquoted(value)),
+        QuoteStyle::Double => {
+            let mut escaped = String::with_capacity(value.len());
+            for ch in value.chars() {
+                if matches!(ch, '\\' | '"' | '$') || ch == char::from(96u8) {
+                    escaped.push('\\');
+                }
+                escaped.push(ch);
+            }
+            Some(escaped)
+        }
+        QuoteStyle::Single => {
+            if value.contains('\'') {
+                None
+            } else {
+                Some(value.to_owned())
+            }
+        }
+    }
+}
+
+fn escape_unquoted(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+
+    for ch in value.chars() {
+        if ch.is_whitespace()
+            || ch == char::from(96u8)
+            || matches!(
+                ch,
+                '\\' | '\'' | '"' | '$' | '!' | '&' | ';' | '|' | '<' | '>' | '('
+                    | ')' | '[' | ']' | '{' | '}' | '*' | '?' | '#'
+            )
+        {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+
+    escaped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        active_context, active_segment_start, active_segment_tokens, quote_candidate,
+        tokens_before_cursor, QuoteStyle,
+    };
+
+    #[test]
+    fn keeps_spaces_inside_open_double_quotes() {
+        let input = "cat \"My Doc";
+        let tokens = tokens_before_cursor(input, input.len());
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[1].text, "My Doc");
+        assert_eq!(tokens[1].quote, QuoteStyle::Double);
+        assert_eq!(&input[tokens[1].start..tokens[1].end], "My Doc");
+    }
+
+    #[test]
+    fn unescapes_backslash_space() {
+        let input = "cat My\\ Doc";
+        let tokens = tokens_before_cursor(input, input.len());
+        assert_eq!(tokens[1].text, "My Doc");
+    }
+
+    #[test]
+    fn pipeline_uses_only_active_segment() {
+        let input = "cat file | gre";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].text, "gre");
+    }
+
+    #[test]
+    fn separator_inside_quotes_does_not_split() {
+        let input = "grep \"a|b\" fi";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[1].text, "a|b");
+    }
+
+    #[test]
+    fn escaped_separator_does_not_split() {
+        let input = "echo a\\|b";
+        assert_eq!(active_segment_start(input, input.len()), 0);
+        assert_eq!(active_segment_tokens(input, input.len())[1].text, "a|b");
+    }
+
+    #[test]
+    fn output_redirection_marks_path_target() {
+        let input = "echo hi > lo";
+        let context = active_context(input, input.len());
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.last().unwrap().text, "lo");
+    }
+
+    #[test]
+    fn fd_append_redirection_marks_path_target() {
+        let input = "cmd 2>> lo";
+        let context = active_context(input, input.len());
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.last().unwrap().text, "lo");
+    }
+
+    #[test]
+    fn input_redirection_marks_path_target() {
+        let input = "sort < in";
+        let context = active_context(input, input.len());
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.last().unwrap().text, "in");
+    }
+
+    #[test]
+    fn descriptor_duplication_is_not_path_target() {
+        let input = "cmd 2>&1";
+        let context = active_context(input, input.len());
+        assert!(!context.redirection_target);
+    }
+
+    #[test]
+    fn dollar_paren_routes_to_inner_command() {
+        let input = "echo $(git che";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].text, "git");
+        assert_eq!(tokens[1].text, "che");
+    }
+
+    #[test]
+    fn nested_dollar_paren_uses_innermost_command() {
+        let input = "echo $(printf %s $(git che";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens[0].text, "git");
+    }
+
+    #[test]
+    fn backticks_route_to_inner_command() {
+        let input = "echo `git che";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens[0].text, "git");
+        assert_eq!(tokens[1].text, "che");
+    }
+
+    #[test]
+    fn process_substitution_routes_to_inner_command() {
+        let input = "diff <(git che";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens[0].text, "git");
+        assert_eq!(tokens[1].text, "che");
+    }
+
+    #[test]
+    fn output_process_substitution_routes_to_inner_command() {
+        let input = "tee >(grep --r";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens[0].text, "grep");
+        assert_eq!(tokens[1].text, "--r");
+    }
+
+    #[test]
+    fn paren_group_routes_to_inner_command() {
+        let input = "( git che";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens[0].text, "git");
+        assert_eq!(tokens[1].text, "che");
+    }
+
+    #[test]
+    fn brace_group_routes_to_inner_command() {
+        let input = "{ docker lo";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens[0].text, "docker");
+        assert_eq!(tokens[1].text, "lo");
+    }
+
+    #[test]
+    fn nested_process_substitution_uses_innermost_frame() {
+        let input = "diff <(cat <(git che";
+        let tokens = active_segment_tokens(input, input.len());
+        assert_eq!(tokens[0].text, "git");
+    }
+}
+ {
             if let Some((next_offset, '(')) = iter.peek().copied() {
                 iter.next();
                 frames.push(Frame {
@@ -181,8 +644,60 @@ fn active_substitution_start(buffer: &str, cursor: usize) -> usize {
             }
         }
 
+        if quote == QuoteStyle::None && matches!(ch, '<' | '>') {
+            if let Some((next_offset, '(')) = iter.peek().copied() {
+                iter.next();
+                frames.push(Frame {
+                    kind: FrameKind::ProcessSub,
+                    start: next_offset + 1,
+                    outer_quote: quote,
+                });
+                quote = QuoteStyle::None;
+                continue;
+            }
+        }
+
+        if quote == QuoteStyle::None && ch == '(' {
+            let previous = before[..offset].chars().rev().find(|value| !value.is_whitespace());
+            if previous.is_none() || previous.is_some_and(|value| matches!(value, ';' | '|' | '&' | '(' | '{')) {
+                frames.push(Frame {
+                    kind: FrameKind::GroupParen,
+                    start: offset + ch.len_utf8(),
+                    outer_quote: quote,
+                });
+                quote = QuoteStyle::None;
+                continue;
+            }
+        }
+
+        if quote == QuoteStyle::None && ch == '{' {
+            let previous = before[..offset].chars().rev().find(|value| !value.is_whitespace());
+            if previous.is_none() || previous.is_some_and(|value| matches!(value, ';' | '|' | '&' | '(' | '{')) {
+                frames.push(Frame {
+                    kind: FrameKind::BraceGroup,
+                    start: offset + ch.len_utf8(),
+                    outer_quote: quote,
+                });
+                quote = QuoteStyle::None;
+                continue;
+            }
+        }
+
         if ch == ')' && quote == QuoteStyle::None {
-            if frames.last().is_some_and(|frame| frame.kind == FrameKind::DollarParen) {
+            if frames.last().is_some_and(|frame| {
+                matches!(
+                    frame.kind,
+                    FrameKind::DollarParen | FrameKind::ProcessSub | FrameKind::GroupParen
+                )
+            }) {
+                let frame = frames.pop().expect("frame");
+                quote = frame.outer_quote;
+                continue;
+            }
+        }
+
+        if ch == '}' && quote == QuoteStyle::None {
+            if frames.last().is_some_and(|frame| frame.kind == FrameKind::BraceGroup) {
                 let frame = frames.pop().expect("frame");
                 quote = frame.outer_quote;
                 continue;
