@@ -40,7 +40,11 @@ TermSense is a Linux-only terminal intelligence package. It discovers commands a
 - local `package.json` script discovery for pnpm/npm/yarn/bun;
 - local Makefile target discovery;
 - contextual flag/option suggestions for common Git, Docker, systemctl and Cargo flows;
-- local accepted-suggestion ranking using privacy-safe derived keys rather than raw command history.
+- local accepted-suggestion ranking using privacy-safe derived keys rather than raw command history;
+- generic filesystem completion for common file commands such as cat/cp/mv/rm/ls/nano/vim;
+- SSH host completion from local ~/.ssh/config and unhashed known_hosts entries;
+- journalctl option and local systemd-unit completion;
+- APT subcommands, options and locally cached package-name completion.
 
 The complete product contract is in [docs/CONCEPT.md](docs/CONCEPT.md).
 
@@ -84,6 +88,41 @@ $ docker logs --f
 $ systemctl --u
     > systemctl --user
 ```
+
+Broader argument intelligence follows the same rule:
+
+```text
+$ cat ~/Doc
+    > cat ~/Documents/
+      cat ~/Document.txt
+
+$ sudo rm ./tem
+    > sudo rm ./temp/
+      sudo rm ./template.txt
+
+$ ssh pro
+    > ssh prod
+      ssh proxy
+
+$ ssh deploy@pro
+    > ssh deploy@prod
+      ssh deploy@proxy
+
+$ journalctl -u ng
+    > journalctl -u nginx.service
+
+$ journalctl --unit=ng
+    > journalctl --unit=nginx.service
+
+$ apt ins
+    > apt install
+
+$ sudo apt install pos
+    > sudo apt install postgresql
+      sudo apt install postgresql-client
+```
+
+Filesystem entries, SSH hosts, units and package names are only shown when they exist in the current machine's local data sources.
 
 Controls:
 
@@ -298,6 +337,8 @@ or:
 
 They do not contain the complete typed command line. Usage boosts are deliberately capped so an exact textual match still outranks a merely frequent prefix match.
 
+Dynamic identifiers are excluded from adaptive persistence entirely. TermSense does not put SSH hosts, filesystem paths, Git refs, Docker container names, systemd unit names, APT package names, or project-specific script/target names into the usage-ranking state. Those values are discovered transiently when relevant.
+
 Example:
 
 ```text
@@ -321,9 +362,10 @@ This renderer is intentionally an initial vertical slice. Context-aware argument
 
 The next provider work extends the same generic context model with:
 
-- broader filesystem argument completion;
+- quoted/escaped shell-token parsing for paths containing whitespace;
 - more option/flag schemas;
-- short-lived provider caches for expensive dynamic sources;
+- SSH Include-file expansion and additional safe local host sources;
+- short-lived caches for more expensive dynamic providers;
 - additional safe project manifests and task runners;
 - ranking decay/recency without storing raw shell history.
 
@@ -342,3 +384,20 @@ bash -n shell/termsense.bash
 ## CI policy
 
 There is intentionally no GitHub Actions workflow in the repository at this stage. Initial development verification is local only.
+
+
+## APT package cache
+
+APT package suggestions never perform a network request. When an APT package argument is first requested, TermSense tries the local `apt-cache pkgnames` command with a hard timeout and stores the result for up to 24 hours:
+
+```text
+$XDG_CACHE_HOME/termsense/apt-packages-v1.txt
+```
+
+or:
+
+```text
+~/.cache/termsense/apt-packages-v1.txt
+```
+
+If `apt-cache` is unavailable or does not return usable data, TermSense falls back to installed package names parsed from `/var/lib/dpkg/status`.
