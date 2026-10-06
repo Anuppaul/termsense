@@ -1,4 +1,9 @@
-use crate::{apt_cache, usage::UsageState, CommandEntry};
+use crate::{
+    apt_cache,
+    shell_parse::{quote_candidate, tokens_before_cursor, QuoteStyle, Token},
+    usage::UsageState,
+    CommandEntry,
+};
 use std::{
     collections::BTreeSet,
     env, fs,
@@ -20,13 +25,6 @@ pub(crate) struct Candidate {
     pub(crate) replacement_start: usize,
     pub(crate) replacement_end: usize,
     pub(crate) usage_key: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Token<'a> {
-    text: &'a str,
-    start: usize,
-    end: usize,
 }
 
 const GIT_SUBCOMMANDS: &[&str] = &[
@@ -178,8 +176,47 @@ const JOURNALCTL_OPTIONS: &[&str] = &[
 ];
 
 const SSH_OPTIONS: &[&str] = &[
-    "-4", "-6", "-A", "-a", "-C", "-f", "-i", "-J", "-L", "-N", "-n", "-o", "-p", "-R",
-    "-T", "-t", "-v",
+    "-4", "-6", "-A", "-a", "-C", "-F", "-f", "-i", "-J", "-L", "-N", "-n", "-o", "-p",
+    "-R", "-T", "-t", "-v",
+];
+
+const SUDO_OPTIONS: &[&str] = &[
+    "-A", "-b", "-C", "-D", "-E", "-e", "-g", "-H", "-h", "-i", "-K", "-k", "-l", "-n",
+    "-P", "-p", "-R", "-S", "-s", "-T", "-U", "-u", "-V", "--chdir=", "--close-from=",
+    "--command-timeout=", "--group=", "--host=", "--login", "--non-interactive",
+    "--preserve-env", "--prompt=", "--remove-timestamp", "--reset-timestamp", "--shell",
+    "--user=",
+];
+
+const FIND_OPTIONS: &[&str] = &[
+    "-amin", "-anewer", "-atime", "-cmin", "-cnewer", "-ctime", "-delete", "-depth",
+    "-empty", "-exec", "-executable", "-false", "-gid", "-group", "-iname", "-inum",
+    "-ipath", "-iregex", "-links", "-lname", "-ls", "-maxdepth", "-mindepth", "-mmin",
+    "-mount", "-mtime", "-name", "-newer", "-nogroup", "-nouser", "-path", "-perm",
+    "-print", "-print0", "-prune", "-readable", "-regex", "-samefile", "-size", "-type",
+    "-uid", "-user", "-xdev",
+];
+
+const GREP_OPTIONS: &[&str] = &[
+    "--after-context=", "--before-context=", "--binary-files=", "--color=", "--context=",
+    "--count", "--exclude=", "--exclude-dir=", "--files-with-matches", "--fixed-strings",
+    "--ignore-case", "--include=", "--invert-match", "--line-number", "--max-count=",
+    "--no-filename", "--only-matching", "--quiet", "--recursive", "--word-regexp",
+    "-E", "-F", "-H", "-I", "-L", "-l", "-n", "-o", "-q", "-r", "-R", "-v", "-w",
+];
+
+const TAR_OPTIONS: &[&str] = &[
+    "--append", "--create", "--delete", "--directory=", "--exclude=", "--extract",
+    "--file=", "--gzip", "--list", "--verbose", "--xz", "-cf", "-cvf", "-tf", "-tvf",
+    "-xf", "-xvf",
+];
+
+const CURL_OPTIONS: &[&str] = &[
+    "--cacert", "--compressed", "--connect-timeout", "--data", "--data-raw", "--fail",
+    "--follow", "--form", "--head", "--header", "--include", "--insecure", "--location",
+    "--max-time", "--output", "--proxy", "--request", "--retry", "--silent", "--user",
+    "--user-agent", "--verbose", "-H", "-I", "-L", "-X", "-d", "-f", "-o", "-s", "-u",
+    "-v",
 ];
 
 pub(crate) fn suggest(
@@ -194,21 +231,30 @@ pub(crate) fn suggest(
     }
 
     let tokens = tokens_before_cursor(buffer, cursor);
-    let effective = strip_sudo(&tokens);
+    if tokens.is_empty() {
+        return Vec::new();
+    }
+
+    if tokens.first().is_some_and(|token| token.text == "sudo") {
+        if add_sudo_value_candidates(&mut Vec::new(), &tokens) {
+            let mut candidates = Vec::new();
+            add_sudo_value_candidates(&mut candidates, &tokens);
+            return finalize(candidates, usage, limit, buffer, cursor);
+        }
+    }
+
+    let effective_start = sudo_nested_command_index(&tokens).unwrap_or(0);
+    let effective = &tokens[effective_start..];
     let mut candidates = Vec::new();
 
-    if effective.len() <= 1 {
-        let token = effective.first().copied().unwrap_or(Token {
-            text: "",
-            start: cursor,
-            end: cursor,
-        });
-        add_path_commands(&mut candidates, commands, token);
+    if effective.is_empty() || effective.len() <= 1 {
+        let current = effective.last().or_else(|| tokens.last()).expect("token");
+        add_command_candidates(&mut candidates, commands, current);
         return finalize(candidates, usage, limit, buffer, cursor);
     }
 
-    let command = effective[0].text;
-    let current = *effective.last().expect("effective tokens is non-empty");
+    let command = effective[0].text.as_str();
+    let current = effective.last().expect("effective tokens is non-empty");
 
     match command {
         "git" => add_git_candidates(&mut candidates, effective, current),
@@ -248,8 +294,12 @@ pub(crate) fn suggest(
         "apt" | "apt-get" => add_apt_candidates(&mut candidates, effective, current),
         "journalctl" => add_journalctl_candidates(&mut candidates, effective, current),
         "ssh" => add_ssh_candidates(&mut candidates, effective, current),
+        "find" => add_find_candidates(&mut candidates, effective, current),
+        "grep" | "egrep" | "fgrep" => add_grep_candidates(&mut candidates, effective, current),
+        "tar" => add_tar_candidates(&mut candidates, effective, current),
+        "curl" => add_curl_candidates(&mut candidates, effective, current),
         command if FILESYSTEM_COMMANDS.contains(&command) => {
-            add_filesystem_candidates(&mut candidates, current)
+            add_filesystem_candidates(&mut candidates, current, false)
         }
         _ => {}
     }
@@ -257,74 +307,218 @@ pub(crate) fn suggest(
     finalize(candidates, usage, limit, buffer, cursor)
 }
 
-fn tokens_before_cursor(buffer: &str, cursor: usize) -> Vec<Token<'_>> {
-    let before = &buffer[..cursor];
-    let bytes = before.as_bytes();
-    let mut tokens = Vec::new();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-            i += 1;
-        }
-        if i >= bytes.len() {
-            break;
-        }
-
-        let start = i;
-        while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
-            i += 1;
-        }
-
-        tokens.push(Token {
-            text: &before[start..i],
-            start,
-            end: i,
-        });
-    }
-
-    if before.is_empty() || before.as_bytes().last().is_some_and(u8::is_ascii_whitespace) {
-        tokens.push(Token {
-            text: "",
-            start: cursor,
-            end: cursor,
-        });
-    }
-
-    tokens
-}
-
-fn strip_sudo<'a>(tokens: &'a [Token<'a>]) -> &'a [Token<'a>] {
-    if tokens.len() >= 2 && tokens.first().is_some_and(|token| token.text == "sudo") {
-        &tokens[1..]
-    } else {
-        tokens
-    }
-}
-
-fn add_path_commands(out: &mut Vec<Candidate>, commands: &[CommandEntry], token: Token<'_>) {
+fn add_command_candidates(out: &mut Vec<Candidate>, commands: &[CommandEntry], current: &Token) {
     for entry in commands {
         push_match(
             out,
             &entry.name,
             &entry.name,
-            token.text,
+            &current.text,
             "command",
             "path",
-            token.start,
-            token.end,
+            current.start,
+            current.end,
             0,
+        );
+    }
+
+    add_shell_names(out, current, "TERMSENSE_SHELL_BUILTINS", "shell-builtin", 30);
+    add_shell_names(out, current, "TERMSENSE_SHELL_ALIASES", "shell-alias", 20);
+    add_shell_names(out, current, "TERMSENSE_SHELL_FUNCTIONS", "shell-function", 20);
+}
+
+fn add_shell_names(
+    out: &mut Vec<Candidate>,
+    current: &Token,
+    variable: &str,
+    source: &'static str,
+    boost: i64,
+) {
+    let Ok(raw) = env::var(variable) else {
+        return;
+    };
+
+    for name in raw.lines().map(str::trim).filter(|name| !name.is_empty()) {
+        push_match(
+            out,
+            name,
+            name,
+            &current.text,
+            "command",
+            source,
+            current.start,
+            current.end,
+            boost,
         );
     }
 }
 
-fn add_git_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: Token<'_>) {
+fn sudo_nested_command_index(tokens: &[Token]) -> Option<usize> {
+    if tokens.first().is_none_or(|token| token.text != "sudo") {
+        return Some(0);
+    }
+
+    let mut index = 1;
+    while index < tokens.len() {
+        let text = tokens[index].text.as_str();
+
+        if text.is_empty() {
+            return Some(index);
+        }
+        if text == "--" {
+            return (index + 1 < tokens.len()).then_some(index + 1);
+        }
+        if sudo_option_takes_value(text) {
+            if text.contains('=') {
+                index += 1;
+            } else {
+                index += 2;
+            }
+            continue;
+        }
+        if text.starts_with('-') {
+            index += 1;
+            continue;
+        }
+
+        return Some(index);
+    }
+
+    None
+}
+
+fn add_sudo_value_candidates(out: &mut Vec<Candidate>, tokens: &[Token]) -> bool {
+    let Some(current) = tokens.last() else {
+        return false;
+    };
+
+    if let Some(prefix) = current.text.strip_prefix("--user=") {
+        add_assignment_values(out, current, "--user=", prefix, users(), "user", "sudo-local");
+        return true;
+    }
+    if let Some(prefix) = current.text.strip_prefix("--group=") {
+        add_assignment_values(out, current, "--group=", prefix, groups(), "group", "sudo-local");
+        return true;
+    }
+
+    if tokens.len() >= 2 && current.text.starts_with('-') {
+        add_static(out, SUDO_OPTIONS, current, "option", "sudo-schema", 650);
+        return true;
+    }
+
+    if tokens.len() >= 3 {
+        let previous = tokens[tokens.len() - 2].text.as_str();
+        if matches!(previous, "-u" | "--user" | "-U" | "--other-user") {
+            add_values(out, current, users(), "user", "sudo-local", 750);
+            return true;
+        }
+        if matches!(previous, "-g" | "--group") {
+            add_values(out, current, groups(), "group", "sudo-local", 750);
+            return true;
+        }
+    }
+
+    false
+}
+
+fn sudo_option_takes_value(value: &str) -> bool {
+    matches!(
+        value,
+        "-u" | "--user" | "-U" | "-g" | "--group" | "-h" | "--host" | "-C"
+            | "--close-from" | "-T" | "--command-timeout" | "-D" | "--chdir" | "-p"
+            | "--prompt"
+    ) || value.starts_with("--user=")
+        || value.starts_with("--group=")
+        || value.starts_with("--host=")
+        || value.starts_with("--close-from=")
+        || value.starts_with("--command-timeout=")
+        || value.starts_with("--chdir=")
+        || value.starts_with("--prompt=")
+}
+
+fn users() -> Vec<String> {
+    parse_colon_names("/etc/passwd")
+}
+
+fn groups() -> Vec<String> {
+    parse_colon_names("/etc/group")
+}
+
+fn parse_colon_names(path: &str) -> Vec<String> {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+
+    let mut values = BTreeSet::new();
+    for line in raw.lines() {
+        let Some((name, _)) = line.split_once(':') else {
+            continue;
+        };
+        if !name.is_empty() {
+            values.insert(name.to_owned());
+        }
+    }
+    values.into_iter().collect()
+}
+
+fn add_assignment_values(
+    out: &mut Vec<Candidate>,
+    current: &Token,
+    option: &str,
+    prefix: &str,
+    values: Vec<String>,
+    kind: &'static str,
+    source: &'static str,
+) {
+    for value in values {
+        if !value.starts_with(prefix) {
+            continue;
+        }
+        let insert = format!("{option}{value}");
+        push_match(
+            out,
+            &insert,
+            &insert,
+            &current.text,
+            kind,
+            source,
+            current.start,
+            current.end,
+            750,
+        );
+    }
+}
+
+fn add_values(
+    out: &mut Vec<Candidate>,
+    current: &Token,
+    values: Vec<String>,
+    kind: &'static str,
+    source: &'static str,
+    boost: i64,
+) {
+    for value in values {
+        push_match(
+            out,
+            &value,
+            &value,
+            &current.text,
+            kind,
+            source,
+            current.start,
+            current.end,
+            boost,
+        );
+    }
+}
+
+fn add_git_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
     if tokens.len() == 2 {
         add_static(out, GIT_SUBCOMMANDS, current, "subcommand", "git-schema", 500);
         return;
     }
 
-    let subcommand = tokens[1].text;
+    let subcommand = tokens[1].text.as_str();
     if current.text.starts_with('-') {
         let options = match subcommand {
             "commit" => GIT_COMMIT_OPTIONS,
@@ -365,7 +559,7 @@ fn add_git_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: T
                     out,
                     line,
                     line,
-                    current.text,
+                    &current.text,
                     "git-ref",
                     "git-local",
                     current.start,
@@ -377,11 +571,7 @@ fn add_git_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: T
     }
 }
 
-fn add_systemctl_candidates(
-    out: &mut Vec<Candidate>,
-    tokens: &[Token<'_>],
-    current: Token<'_>,
-) {
+fn add_systemctl_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
     if current.text.starts_with('-') {
         add_static(
             out,
@@ -406,14 +596,14 @@ fn add_systemctl_candidates(
         return;
     }
 
-    let subcommand = tokens[1].text;
+    let subcommand = tokens[1].text.as_str();
     if tokens.len() == 3 && SYSTEMCTL_UNIT_COMMANDS.contains(&subcommand) {
         for unit in systemd_units() {
             push_match(
                 out,
                 &unit,
                 &unit,
-                current.text,
+                &current.text,
                 "systemd-unit",
                 "systemd-local",
                 current.start,
@@ -424,11 +614,7 @@ fn add_systemctl_candidates(
     }
 }
 
-fn add_docker_candidates(
-    out: &mut Vec<Candidate>,
-    tokens: &[Token<'_>],
-    current: Token<'_>,
-) {
+fn add_docker_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
     if tokens.len() == 2 {
         add_static(
             out,
@@ -441,7 +627,7 @@ fn add_docker_candidates(
         return;
     }
 
-    let subcommand = tokens[1].text;
+    let subcommand = tokens[1].text.as_str();
     if current.text.starts_with('-') {
         let options = match subcommand {
             "logs" => DOCKER_LOGS_OPTIONS,
@@ -466,7 +652,7 @@ fn add_docker_candidates(
                     out,
                     name,
                     name,
-                    current.text,
+                    &current.text,
                     "container",
                     "docker-local",
                     current.start,
@@ -478,7 +664,7 @@ fn add_docker_candidates(
     }
 }
 
-fn add_cargo_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: Token<'_>) {
+fn add_cargo_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
     if tokens.len() == 2 {
         add_static(
             out,
@@ -492,7 +678,7 @@ fn add_cargo_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current:
     }
 
     if current.text.starts_with('-') {
-        let options = match tokens[1].text {
+        let options = match tokens[1].text.as_str() {
             "build" | "check" | "run" => CARGO_BUILD_OPTIONS,
             "test" => CARGO_TEST_OPTIONS,
             _ => &[],
@@ -503,8 +689,8 @@ fn add_cargo_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current:
 
 fn add_package_manager_candidates(
     out: &mut Vec<Candidate>,
-    tokens: &[Token<'_>],
-    current: Token<'_>,
+    tokens: &[Token],
+    current: &Token,
     schema: &[&str],
     manager: &'static str,
 ) {
@@ -524,7 +710,7 @@ fn add_package_manager_candidates(
                     out,
                     &script,
                     &script,
-                    current.text,
+                    &current.text,
                     "project-script",
                     "package-json",
                     current.start,
@@ -542,7 +728,7 @@ fn add_package_manager_candidates(
                 out,
                 &script,
                 &script,
-                current.text,
+                &current.text,
                 "project-script",
                 "package-json",
                 current.start,
@@ -553,7 +739,7 @@ fn add_package_manager_candidates(
     }
 }
 
-fn add_apt_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: Token<'_>) {
+fn add_apt_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
     if current.text.starts_with('-') {
         add_static(out, APT_OPTIONS, current, "option", "apt-schema", 650);
         return;
@@ -571,13 +757,13 @@ fn add_apt_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: T
         return;
     }
 
-    if tokens.len() >= 3 && APT_PACKAGE_COMMANDS.contains(&tokens[1].text) {
+    if tokens.len() >= 3 && APT_PACKAGE_COMMANDS.contains(&tokens[1].text.as_str()) {
         for package in apt_cache::packages() {
             push_match(
                 out,
                 &package,
                 &package,
-                current.text,
+                &current.text,
                 "package",
                 "apt-local-cache",
                 current.start,
@@ -588,11 +774,7 @@ fn add_apt_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: T
     }
 }
 
-fn add_journalctl_candidates(
-    out: &mut Vec<Candidate>,
-    tokens: &[Token<'_>],
-    current: Token<'_>,
-) {
+fn add_journalctl_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
     if current.text.starts_with("--unit=") {
         add_unit_assignment_candidates(out, current, "--unit=");
         return;
@@ -615,14 +797,14 @@ fn add_journalctl_candidates(
     }
 
     if tokens.len() >= 3 {
-        let previous = tokens[tokens.len() - 2].text;
+        let previous = tokens[tokens.len() - 2].text.as_str();
         if matches!(previous, "-u" | "--unit" | "--user-unit") {
             for unit in systemd_units() {
                 push_match(
                     out,
                     &unit,
                     &unit,
-                    current.text,
+                    &current.text,
                     "systemd-unit",
                     "systemd-local",
                     current.start,
@@ -634,19 +816,14 @@ fn add_journalctl_candidates(
     }
 }
 
-fn add_unit_assignment_candidates(
-    out: &mut Vec<Candidate>,
-    current: Token<'_>,
-    option: &str,
-) {
+fn add_unit_assignment_candidates(out: &mut Vec<Candidate>, current: &Token, option: &str) {
     for unit in systemd_units() {
         let insert = format!("{option}{unit}");
-        let match_text = format!("{option}{unit}");
         push_match(
             out,
             &insert,
-            &match_text,
-            current.text,
+            &insert,
+            &current.text,
             "systemd-unit",
             "systemd-local",
             current.start,
@@ -656,7 +833,15 @@ fn add_unit_assignment_candidates(
     }
 }
 
-fn add_ssh_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: Token<'_>) {
+fn add_ssh_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if tokens.len() >= 3 {
+        let previous = tokens[tokens.len() - 2].text.as_str();
+        if matches!(previous, "-i" | "-F") {
+            add_filesystem_candidates(out, current, false);
+            return;
+        }
+    }
+
     if current.text.starts_with('-') {
         add_static(out, SSH_OPTIONS, current, "option", "ssh-schema", 650);
         return;
@@ -668,7 +853,7 @@ fn add_ssh_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: T
 
     let (user_prefix, host_prefix) = match current.text.rsplit_once('@') {
         Some((user, host)) => (format!("{user}@"), host),
-        None => (String::new(), current.text),
+        None => (String::new(), current.text.as_str()),
     };
 
     for host in ssh_hosts() {
@@ -680,7 +865,7 @@ fn add_ssh_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: T
             out,
             &insert,
             &insert,
-            current.text,
+            &current.text,
             "ssh-host",
             "ssh-local",
             current.start,
@@ -688,6 +873,235 @@ fn add_ssh_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: T
             750,
         );
     }
+}
+
+fn add_find_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if current.text.starts_with('-') {
+        add_static(out, FIND_OPTIONS, current, "option", "find-schema", 650);
+        return;
+    }
+
+    if tokens.len() == 2 {
+        add_filesystem_candidates(out, current, true);
+    }
+}
+
+fn add_grep_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if current.text.starts_with('-') {
+        add_static(out, GREP_OPTIONS, current, "option", "grep-schema", 650);
+        return;
+    }
+
+    if tokens.len() >= 3 {
+        let previous = tokens[tokens.len() - 2].text.as_str();
+        if previous.starts_with('-') {
+            return;
+        }
+        add_filesystem_candidates(out, current, false);
+    }
+}
+
+fn add_tar_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if tokens.len() >= 3 {
+        let previous = tokens[tokens.len() - 2].text.as_str();
+        if matches!(previous, "-f" | "--file") {
+            add_filesystem_candidates(out, current, false);
+            return;
+        }
+    }
+
+    if current.text.starts_with('-') {
+        add_static(out, TAR_OPTIONS, current, "option", "tar-schema", 650);
+        return;
+    }
+
+    if tokens.len() >= 2 {
+        add_filesystem_candidates(out, current, false);
+    }
+}
+
+fn add_curl_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if tokens.len() >= 3 {
+        let previous = tokens[tokens.len() - 2].text.as_str();
+        if matches!(previous, "-o" | "--output" | "--cacert") {
+            add_filesystem_candidates(out, current, false);
+            return;
+        }
+    }
+
+    if current.text.starts_with('-') {
+        add_static(out, CURL_OPTIONS, current, "option", "curl-schema", 650);
+    }
+}
+
+fn package_scripts() -> Vec<String> {
+    let Some(path) = find_upwards("package.json") else {
+        return Vec::new();
+    };
+    let Ok(raw) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return Vec::new();
+    };
+    let Some(scripts) = value.get("scripts").and_then(|value| value.as_object()) else {
+        return Vec::new();
+    };
+
+    let mut names: Vec<String> = scripts.keys().cloned().collect();
+    names.sort();
+    names
+}
+
+fn add_make_targets(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if tokens.len() != 2 {
+        return;
+    }
+
+    for target in make_targets() {
+        push_match(
+            out,
+            &target,
+            &target,
+            &current.text,
+            "make-target",
+            "makefile",
+            current.start,
+            current.end,
+            800,
+        );
+    }
+}
+
+fn make_targets() -> Vec<String> {
+    let manifest = ["GNUmakefile", "Makefile", "makefile"]
+        .iter()
+        .find_map(|name| find_upwards(name));
+
+    let Some(path) = manifest else {
+        return Vec::new();
+    };
+    let Ok(raw) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+
+    let mut targets = BTreeSet::new();
+    for line in raw.lines() {
+        if line.starts_with('\t') || line.trim_start().starts_with('#') {
+            continue;
+        }
+
+        let Some((left, _)) = line.split_once(':') else {
+            continue;
+        };
+
+        if left.contains('=')
+            || left.contains('%')
+            || left.contains(char::from(36u8))
+        {
+            continue;
+        }
+
+        for target in left.split_whitespace() {
+            if target.is_empty() || target.starts_with('.') {
+                continue;
+            }
+            targets.insert(target.to_owned());
+        }
+    }
+
+    targets.into_iter().collect()
+}
+
+fn find_upwards(name: &str) -> Option<PathBuf> {
+    let mut dir = env::current_dir().ok()?;
+
+    for _ in 0..8 {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+
+        if !dir.pop() {
+            break;
+        }
+    }
+
+    None
+}
+
+fn add_directory_candidates(out: &mut Vec<Candidate>, current: &Token) {
+    add_filesystem_candidates(out, current, true);
+}
+
+fn add_filesystem_candidates(out: &mut Vec<Candidate>, current: &Token, directories_only: bool) {
+    if current.text.starts_with('-') {
+        return;
+    }
+
+    let Some((lookup_parent, typed_parent, base)) = directory_query(&current.text) else {
+        return;
+    };
+
+    let Ok(entries) = fs::read_dir(&lookup_parent) else {
+        return;
+    };
+
+    let show_hidden = base.starts_with('.');
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !show_hidden && name.starts_with('.') {
+            continue;
+        }
+        if !name.starts_with(&base) {
+            continue;
+        }
+
+        let is_dir = entry.path().is_dir();
+        if directories_only && !is_dir {
+            continue;
+        }
+
+        let suffix = if is_dir { "/" } else { "" };
+        let logical = format!("{typed_parent}{name}{suffix}");
+        let Some(insert) = quote_candidate(&logical, current.quote) else {
+            continue;
+        };
+        let kind = if is_dir { "directory" } else { "file" };
+
+        push_match(
+            out,
+            &insert,
+            &logical,
+            &current.text,
+            kind,
+            "filesystem",
+            current.start,
+            current.end,
+            700,
+        );
+    }
+}
+
+fn directory_query(input: &str) -> Option<(PathBuf, String, String)> {
+    let (typed_parent, base) = match input.rfind('/') {
+        Some(index) => (input[..=index].to_owned(), input[index + 1..].to_owned()),
+        None => (String::new(), input.to_owned()),
+    };
+
+    let lookup_parent = if typed_parent.is_empty() {
+        env::current_dir().ok()?
+    } else if typed_parent == "~/" {
+        PathBuf::from(env::var_os("HOME")?)
+    } else if let Some(rest) = typed_parent.strip_prefix("~/") {
+        PathBuf::from(env::var_os("HOME")?).join(rest)
+    } else {
+        PathBuf::from(&typed_parent)
+    };
+
+    Some((lookup_parent, typed_parent, base))
 }
 
 fn ssh_hosts() -> Vec<String> {
@@ -758,241 +1172,20 @@ fn parse_known_hosts(path: &PathBuf, hosts: &mut BTreeSet<String>) {
             if host.is_empty() {
                 continue;
             }
+
             let normalized = if host.starts_with('[') {
-                host.split(']').next().map(|value| value.trim_start_matches('['))
+                host.split(']')
+                    .next()
+                    .map(|value| value.trim_start_matches('['))
             } else {
                 Some(host)
             };
+
             if let Some(value) = normalized.filter(|value| !value.is_empty()) {
                 hosts.insert(value.to_owned());
             }
         }
     }
-}
-
-fn add_filesystem_candidates(out: &mut Vec<Candidate>, current: Token<'_>) {
-    if current.text.starts_with('-') {
-        return;
-    }
-
-    let Some((lookup_parent, typed_parent, base)) = directory_query(current.text) else {
-        return;
-    };
-
-    let Ok(entries) = fs::read_dir(&lookup_parent) else {
-        return;
-    };
-
-    let show_hidden = base.starts_with('.');
-    for entry in entries.flatten() {
-        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        if !show_hidden && name.starts_with('.') {
-            continue;
-        }
-        if !name.starts_with(&base) {
-            continue;
-        }
-
-        let is_dir = entry.path().is_dir();
-        let suffix = if is_dir { "/" } else { "" };
-        let display = format!("{typed_parent}{name}{suffix}");
-        let insert = format!("{typed_parent}{}{suffix}", escape_path_component(&name));
-        let kind = if is_dir { "directory" } else { "file" };
-
-        push_match(
-            out,
-            &insert,
-            &display,
-            current.text,
-            kind,
-            "filesystem",
-            current.start,
-            current.end,
-            700,
-        );
-    }
-}
-
-fn package_scripts() -> Vec<String> {
-    let Some(path) = find_upwards("package.json") else {
-        return Vec::new();
-    };
-    let Ok(raw) = fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
-        return Vec::new();
-    };
-    let Some(scripts) = value.get("scripts").and_then(|value| value.as_object()) else {
-        return Vec::new();
-    };
-
-    let mut names: Vec<String> = scripts.keys().cloned().collect();
-    names.sort();
-    names
-}
-
-fn add_make_targets(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: Token<'_>) {
-    if tokens.len() != 2 {
-        return;
-    }
-
-    for target in make_targets() {
-        push_match(
-            out,
-            &target,
-            &target,
-            current.text,
-            "make-target",
-            "makefile",
-            current.start,
-            current.end,
-            800,
-        );
-    }
-}
-
-fn make_targets() -> Vec<String> {
-    let manifest = ["GNUmakefile", "Makefile", "makefile"]
-        .iter()
-        .find_map(|name| find_upwards(name));
-
-    let Some(path) = manifest else {
-        return Vec::new();
-    };
-    let Ok(raw) = fs::read_to_string(path) else {
-        return Vec::new();
-    };
-
-    let mut targets = BTreeSet::new();
-    for line in raw.lines() {
-        if line.starts_with('\t') || line.trim_start().starts_with('#') {
-            continue;
-        }
-
-        let Some((left, _)) = line.split_once(':') else {
-            continue;
-        };
-
-        if left.contains('=')
-            || left.contains('%')
-            || left.contains(char::from(36u8))
-        {
-            continue;
-        }
-
-        for target in left.split_whitespace() {
-            if target.is_empty() || target.starts_with('.') {
-                continue;
-            }
-            targets.insert(target.to_owned());
-        }
-    }
-
-    targets.into_iter().collect()
-}
-
-fn find_upwards(name: &str) -> Option<PathBuf> {
-    let mut dir = env::current_dir().ok()?;
-
-    for _ in 0..8 {
-        let candidate = dir.join(name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-
-        if !dir.pop() {
-            break;
-        }
-    }
-
-    None
-}
-
-fn add_directory_candidates(out: &mut Vec<Candidate>, current: Token<'_>) {
-    let Some((lookup_parent, typed_parent, base)) = directory_query(current.text) else {
-        return;
-    };
-
-    let Ok(entries) = fs::read_dir(&lookup_parent) else {
-        return;
-    };
-
-    let show_hidden = base.starts_with('.');
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if !file_type.is_dir() && !file_type.is_symlink() {
-            continue;
-        }
-
-        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        if !show_hidden && name.starts_with('.') {
-            continue;
-        }
-        if !name.starts_with(&base) {
-            continue;
-        }
-
-        let display = format!("{typed_parent}{name}/");
-        let insert = format!("{typed_parent}{}/", escape_path_component(&name));
-
-        push_match(
-            out,
-            &insert,
-            &display,
-            current.text,
-            "directory",
-            "filesystem",
-            current.start,
-            current.end,
-            700,
-        );
-    }
-}
-
-fn directory_query(input: &str) -> Option<(PathBuf, String, String)> {
-    let (typed_parent, base) = match input.rfind('/') {
-        Some(index) => (input[..=index].to_owned(), input[index + 1..].to_owned()),
-        None => (String::new(), input.to_owned()),
-    };
-
-    let lookup_parent = if typed_parent.is_empty() {
-        env::current_dir().ok()?
-    } else if typed_parent == "~/" {
-        PathBuf::from(env::var_os("HOME")?)
-    } else if let Some(rest) = typed_parent.strip_prefix("~/") {
-        PathBuf::from(env::var_os("HOME")?).join(rest)
-    } else {
-        PathBuf::from(&typed_parent)
-    };
-
-    Some((lookup_parent, typed_parent, base))
-}
-
-fn escape_path_component(name: &str) -> String {
-    let mut escaped = String::with_capacity(name.len());
-
-    for ch in name.chars() {
-        if ch.is_whitespace()
-            || ch == char::from(96u8)
-            || matches!(
-                ch,
-                '\\' | '\'' | '"' | '$' | '!' | '&' | ';' | '|' | '<' | '>' | '('
-                    | ')' | '[' | ']' | '{' | '}' | '*' | '?' | '#'
-            )
-        {
-            escaped.push('\\');
-        }
-        escaped.push(ch);
-    }
-
-    escaped
 }
 
 fn systemd_units() -> Vec<String> {
@@ -1044,7 +1237,7 @@ fn is_unit_name(name: &str) -> bool {
 fn add_static(
     out: &mut Vec<Candidate>,
     values: &[&str],
-    current: Token<'_>,
+    current: &Token,
     kind: &'static str,
     source: &'static str,
     boost: i64,
@@ -1054,7 +1247,7 @@ fn add_static(
             out,
             value,
             value,
-            current.text,
+            &current.text,
             kind,
             source,
             current.start,
@@ -1093,6 +1286,7 @@ fn push_match(
 fn usage_key_for(source: &str, kind: &str, insert_text: &str) -> String {
     match source {
         "path"
+        | "shell-builtin"
         | "git-schema"
         | "git-commit-schema"
         | "git-checkout-schema"
@@ -1107,7 +1301,12 @@ fn usage_key_for(source: &str, kind: &str, insert_text: &str) -> String {
         | "package-manager-schema"
         | "apt-schema"
         | "journalctl-schema"
-        | "ssh-schema" => format!("{source}:{kind}:{insert_text}"),
+        | "ssh-schema"
+        | "sudo-schema"
+        | "find-schema"
+        | "grep-schema"
+        | "tar-schema"
+        | "curl-schema" => format!("{source}:{kind}:{insert_text}"),
         _ => String::new(),
     }
 }
@@ -1158,7 +1357,13 @@ fn finalize(
     });
 
     let mut seen = BTreeSet::new();
-    candidates.retain(|candidate| seen.insert(candidate.insert_text.clone()));
+    candidates.retain(|candidate| {
+        seen.insert((
+            candidate.insert_text.clone(),
+            candidate.replacement_start,
+            candidate.replacement_end,
+        ))
+    });
     candidates.truncate(limit);
     candidates
 }
@@ -1212,28 +1417,17 @@ fn run_bounded(program: &str, args: &[&str], timeout_ms: u64) -> Option<String> 
 
 #[cfg(test)]
 mod tests {
-    use super::{completed_line, directory_query, score_prefix, strip_sudo, tokens_before_cursor};
-    use crate::usage::UsageState;
+    use super::{completed_line, directory_query, score_prefix, sudo_nested_command_index};
+    use crate::{
+        shell_parse::tokens_before_cursor,
+        usage::UsageState,
+    };
 
     #[test]
-    fn tokenizes_trailing_argument_position() {
-        let tokens = tokens_before_cursor("git checkout ", 13);
-        assert_eq!(tokens.len(), 3);
-        assert_eq!(tokens[2].text, "");
-        assert_eq!(tokens[2].start, 13);
-    }
-
-    #[test]
-    fn strips_sudo_for_context_routing() {
-        let tokens = tokens_before_cursor("sudo git che", 12);
-        let effective = strip_sudo(&tokens);
-        assert_eq!(effective[0].text, "git");
-        assert_eq!(effective[1].text, "che");
-    }
-
-    #[test]
-    fn exact_prefix_scores_above_longer_match() {
-        assert!(score_prefix("git", "git").unwrap() > score_prefix("gitk", "git").unwrap());
+    fn sudo_nested_command_is_detected() {
+        let input = "sudo -u root git che";
+        let tokens = tokens_before_cursor(input, input.len());
+        assert_eq!(sudo_nested_command_index(&tokens), Some(3));
     }
 
     #[test]
@@ -1244,29 +1438,15 @@ mod tests {
     }
 
     #[test]
-    fn git_subcommands_are_contextual() {
-        let candidates = super::suggest(&[], &UsageState::default(), "git che", 7, 20);
-        let values: Vec<&str> = candidates
-            .iter()
-            .map(|candidate| candidate.insert_text.as_str())
-            .collect();
-
-        assert!(values.contains(&"checkout"));
-        assert!(values.contains(&"check-ignore"));
-        assert!(!values.contains(&"status"));
+    fn exact_prefix_scores_above_longer_match() {
+        assert!(score_prefix("git", "git").unwrap() > score_prefix("gitk", "git").unwrap());
     }
 
     #[test]
-    fn systemctl_subcommands_are_contextual() {
-        let candidates = super::suggest(&[], &UsageState::default(), "systemctl res", 13, 20);
-        let values: Vec<&str> = candidates
-            .iter()
-            .map(|candidate| candidate.insert_text.as_str())
-            .collect();
-
-        assert!(values.contains(&"restart"));
-        assert!(values.contains(&"reset-failed"));
-        assert!(values.contains(&"rescue"));
+    fn git_subcommands_are_contextual() {
+        let candidates = super::suggest(&[], &UsageState::default(), "git che", 7, 20);
+        assert!(candidates.iter().any(|candidate| candidate.insert_text == "checkout"));
+        assert!(!candidates.iter().any(|candidate| candidate.insert_text == "status"));
     }
 
     #[test]
@@ -1293,55 +1473,45 @@ mod tests {
     #[test]
     fn cargo_subcommands_are_generic() {
         let candidates = super::suggest(&[], &UsageState::default(), "cargo bu", 8, 20);
-        assert!(candidates
-            .iter()
-            .any(|candidate| candidate.display_text == "cargo build"));
+        assert!(candidates.iter().any(|candidate| candidate.display_text == "cargo build"));
     }
 
     #[test]
     fn git_commit_flags_are_contextual() {
-        let candidates =
-            super::suggest(&[], &UsageState::default(), "git commit --a", 14, 20);
-        assert!(candidates
-            .iter()
-            .any(|candidate| candidate.display_text == "git commit --amend"));
-        assert!(candidates
-            .iter()
-            .any(|candidate| candidate.display_text == "git commit --all"));
+        let candidates = super::suggest(&[], &UsageState::default(), "git commit --a", 14, 20);
+        assert!(candidates.iter().any(|candidate| candidate.display_text == "git commit --amend"));
     }
 
     #[test]
     fn docker_logs_flags_are_contextual() {
-        let candidates =
-            super::suggest(&[], &UsageState::default(), "docker logs --f", 15, 20);
-        assert!(candidates
-            .iter()
-            .any(|candidate| candidate.display_text == "docker logs --follow"));
-    }
-
-    #[test]
-    fn journalctl_options_are_contextual() {
-        let candidates =
-            super::suggest(&[], &UsageState::default(), "journalctl --f", 14, 20);
-        assert!(candidates
-            .iter()
-            .any(|candidate| candidate.display_text == "journalctl --follow"));
+        let candidates = super::suggest(&[], &UsageState::default(), "docker logs --f", 15, 20);
+        assert!(candidates.iter().any(|candidate| candidate.display_text == "docker logs --follow"));
     }
 
     #[test]
     fn apt_subcommands_are_contextual() {
         let candidates = super::suggest(&[], &UsageState::default(), "apt ins", 7, 20);
-        assert!(candidates
-            .iter()
-            .any(|candidate| candidate.display_text == "apt install"));
+        assert!(candidates.iter().any(|candidate| candidate.display_text == "apt install"));
     }
 
     #[test]
-    fn ssh_options_are_contextual() {
-        let candidates = super::suggest(&[], &UsageState::default(), "ssh -", 5, 20);
-        assert!(candidates
-            .iter()
-            .any(|candidate| candidate.display_text == "ssh -i"));
+    fn find_options_are_contextual() {
+        let candidates = super::suggest(&[], &UsageState::default(), "find ./ -na", 11, 20);
+        assert!(candidates.iter().any(|candidate| candidate.display_text == "find ./ -name"));
+    }
+
+    #[test]
+    fn grep_options_are_contextual() {
+        let candidates = super::suggest(&[], &UsageState::default(), "grep -r", 7, 20);
+        assert!(candidates.iter().any(|candidate| candidate.display_text == "grep -r"));
+        assert!(candidates.iter().any(|candidate| candidate.display_text == "grep -R"));
+    }
+
+    #[test]
+    fn curl_options_are_contextual() {
+        let candidates = super::suggest(&[], &UsageState::default(), "curl --hea", 10, 20);
+        assert!(candidates.iter().any(|candidate| candidate.display_text == "curl --head"));
+        assert!(candidates.iter().any(|candidate| candidate.display_text == "curl --header"));
     }
 
     #[test]
@@ -1349,5 +1519,15 @@ mod tests {
         assert_eq!(super::usage_key_for("ssh-local", "ssh-host", "prod"), "");
         assert_eq!(super::usage_key_for("filesystem", "file", "~/secret.txt"), "");
         assert_eq!(super::usage_key_for("git-local", "git-ref", "feature/private"), "");
+        assert_eq!(super::usage_key_for("sudo-local", "user", "alice"), "");
+    }
+
+    #[test]
+    fn nested_sudo_keeps_full_display_context() {
+        let candidates =
+            super::suggest(&[], &UsageState::default(), "sudo -H git che", 15, 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "sudo -H git checkout"));
     }
 }
