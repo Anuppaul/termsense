@@ -2,6 +2,15 @@
 
 **Context-aware inline command suggestions for Linux terminals.**
 
+[![Latest release](https://img.shields.io/github/v/release/Anuppaul/termsense?display_name=tag&sort=semver)](https://github.com/Anuppaul/termsense/releases/latest)
+[![Release](https://github.com/Anuppaul/termsense/actions/workflows/release.yml/badge.svg)](https://github.com/Anuppaul/termsense/actions/workflows/release.yml)
+[![License](https://img.shields.io/github/license/Anuppaul/termsense)](LICENSE)
+[![Open issues](https://img.shields.io/github/issues/Anuppaul/termsense)](https://github.com/Anuppaul/termsense/issues)
+[![Contributors](https://img.shields.io/github/contributors/Anuppaul/termsense)](https://github.com/Anuppaul/termsense/graphs/contributors)
+![Linux](https://img.shields.io/badge/platform-Linux-1793D1?logo=linux&logoColor=white)
+![Bash](https://img.shields.io/badge/Bash-%E2%89%A55.0-4EAA25?logo=gnubash&logoColor=white)
+![Rust](https://img.shields.io/badge/core-Rust-000000?logo=rust&logoColor=white)
+
 TermSense is a Linux-only terminal intelligence package. It discovers commands available on the current machine and adds IDE-style discovery to an interactive shell without replacing Bash or executing suggestions automatically.
 
 > Status: **v0.1.0 released.** Automated release-readiness and interactive Bash UX validation passed.
@@ -20,9 +29,20 @@ If you want a small place to start, check the open starter issues. For larger ch
 
 Starter work:
 
-- [Good first issue: add a dedicated rsync option schema](https://github.com/Anuppaul/termsense/issues/1)
-- [Good first issue: add shell redirection regression coverage](https://github.com/Anuppaul/termsense/issues/2)
-- [Help wanted: design a scoped Zsh adapter](https://github.com/Anuppaul/termsense/issues/3)
+- [Browse all good first issues](https://github.com/Anuppaul/termsense/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+- [Browse help wanted issues](https://github.com/Anuppaul/termsense/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
+- [Public roadmap](docs/ROADMAP.md)
+
+## Project docs
+
+- [Product contract](docs/CONCEPT.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Provider development guide](docs/PROVIDER_GUIDE.md)
+- [Compatibility](docs/COMPATIBILITY.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## Implemented now
 
@@ -752,6 +772,12 @@ git push origin v0.1.0
 
 That tag push is enough to trigger the release.
 
+
+## Contributors
+
+TermSense is maintained in the open. Code, tests, documentation, bug reports, compatibility findings, and design feedback are all valuable contributions.
+
+[See everyone who has contributed →](https://github.com/Anuppaul/termsense/graphs/contributors)
 
 ## APT package cache
 
