@@ -375,7 +375,11 @@ _termsense_ctrl_space() {
   __TERMSENSE_PALETTE_ACTIVE=1
   __TERMSENSE_SELECTED=0
 
-  if _termsense_query 500; then
+  local left="${READLINE_LINE:0:READLINE_POINT}"
+  local limit=500
+  [[ -z "${left//[[:space:]]/}" ]] && limit=0
+
+  if _termsense_query "$limit"; then
     _termsense_draw_overlay
   else
     _termsense_dismiss
