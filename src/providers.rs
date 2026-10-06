@@ -2633,10 +2633,7 @@ mod tests {
             .iter()
             .find(|candidate| candidate.insert_text == "checkout")
             .expect("checkout candidate");
-        assert_eq!(
-            checkout.description,
-            "Switch branches or restore files"
-        );
+        assert_eq!(checkout.description, "Switch branches or restore files");
         assert!(!candidates
             .iter()
             .any(|candidate| candidate.insert_text == "status"));
