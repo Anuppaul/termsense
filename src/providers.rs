@@ -19,6 +19,7 @@ pub(crate) struct Candidate {
     pub(crate) score: i64,
     pub(crate) replacement_start: usize,
     pub(crate) replacement_end: usize,
+    pub(crate) usage_key: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -296,7 +297,14 @@ fn add_git_candidates(out: &mut Vec<Candidate>, tokens: &[Token<'_>], current: T
             "log" => GIT_LOG_OPTIONS,
             _ => &[],
         };
-        add_static(out, options, current, "option", "git-schema", 650);
+        let source = match subcommand {
+            "commit" => "git-commit-schema",
+            "checkout" => "git-checkout-schema",
+            "switch" => "git-switch-schema",
+            "log" => "git-log-schema",
+            _ => "git-schema",
+        };
+        add_static(out, options, current, "option", source, 650);
         return;
     }
 
@@ -405,7 +413,13 @@ fn add_docker_candidates(
             "exec" => DOCKER_EXEC_OPTIONS,
             _ => &[],
         };
-        add_static(out, options, current, "option", "docker-schema", 650);
+        let source = match subcommand {
+            "logs" => "docker-logs-schema",
+            "ps" => "docker-ps-schema",
+            "exec" => "docker-exec-schema",
+            _ => "docker-schema",
+        };
+        add_static(out, options, current, "option", source, 650);
         return;
     }
 
@@ -773,6 +787,7 @@ fn push_match(
             score: score + boost,
             replacement_start,
             replacement_end,
+            usage_key: format!("{source}:{kind}:{insert_text}"),
         });
     }
 }
@@ -812,7 +827,7 @@ fn finalize(
             candidate.replacement_end,
             &candidate.insert_text,
         );
-        candidate.score += usage.boost(&candidate.display_text);
+        candidate.score += usage.boost(&candidate.usage_key);
     }
 
     candidates.sort_by(|a, b| {
