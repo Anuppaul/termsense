@@ -1,6 +1,6 @@
 use crate::{
     apt_cache,
-    shell_parse::{active_segment_tokens, quote_candidate, Token},
+    shell_parse::{active_context, quote_candidate, Token},
     usage::UsageState,
     CommandEntry,
 };
@@ -234,12 +234,18 @@ pub(crate) fn suggest(
         return Vec::new();
     }
 
-    let tokens = active_segment_tokens(buffer, cursor);
+    let context = active_context(buffer, cursor);
+    let tokens = context.tokens;
     if tokens.is_empty() {
         return Vec::new();
     }
 
     let mut candidates = Vec::new();
+    if context.redirection_target {
+        let current = tokens.last().expect("redirection target token");
+        add_filesystem_candidates(&mut candidates, current, false);
+        return finalize(candidates, usage, limit, buffer, cursor);
+    }
     if tokens.first().is_some_and(|token| token.text == "sudo")
         && add_sudo_value_candidates(&mut candidates, &tokens)
     {
@@ -907,9 +913,20 @@ fn add_grep_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Tok
 }
 
 fn add_tar_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if current.text.starts_with("--file=") {
+        add_path_assignment_candidates(out, current, "--file=");
+        return;
+    }
+    if current.text.starts_with("--directory=") {
+        add_path_assignment_candidates(out, current, "--directory=");
+        return;
+    }
+
     if tokens.len() >= 3 {
         let previous = tokens[tokens.len() - 2].text.as_str();
-        if matches!(previous, "-f" | "--file") {
+        if matches!(previous, "-f" | "--file" | "-C" | "--directory")
+            || (previous.starts_with('-') && previous.contains('f') && !previous.starts_with("--"))
+        {
             add_filesystem_candidates(out, current, false);
             return;
         }
@@ -926,10 +943,22 @@ fn add_tar_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Toke
 }
 
 fn add_curl_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if current.text.starts_with("--output=") {
+        add_path_assignment_candidates(out, current, "--output=");
+        return;
+    }
+    if current.text.starts_with("--cacert=") {
+        add_path_assignment_candidates(out, current, "--cacert=");
+        return;
+    }
+
     if tokens.len() >= 3 {
         let previous = tokens[tokens.len() - 2].text.as_str();
         if matches!(previous, "-o" | "--output" | "--cacert") {
             add_filesystem_candidates(out, current, false);
+            return;
+        }
+        if matches!(previous, "-H" | "--header" | "-d" | "--data" | "--data-raw" | "-X" | "--request") {
             return;
         }
     }
@@ -958,6 +987,41 @@ fn add_command_lookup_candidates(
     }
 
     add_command_candidates(out, commands, current);
+}
+
+fn add_path_assignment_candidates(
+    out: &mut Vec<Candidate>,
+    current: &Token,
+    option: &str,
+) {
+    let Some(prefix) = current.text.strip_prefix(option) else {
+        return;
+    };
+
+    let synthetic = Token {
+        text: prefix.to_owned(),
+        start: current.start + option.len(),
+        end: current.end,
+        quote: current.quote,
+    };
+
+    let mut path_candidates = Vec::new();
+    add_filesystem_candidates(&mut path_candidates, &synthetic, false);
+
+    for candidate in path_candidates {
+        let insert = format!("{option}{}", candidate.insert_text);
+        push_match(
+            out,
+            &insert,
+            &insert,
+            &current.text,
+            candidate.kind,
+            "filesystem",
+            current.start,
+            current.end,
+            700,
+        );
+    }
 }
 
 fn package_scripts() -> Vec<String> {
@@ -1446,7 +1510,7 @@ fn run_bounded(program: &str, args: &[&str], timeout_ms: u64) -> Option<String> 
 mod tests {
     use super::{completed_line, directory_query, score_prefix, sudo_nested_command_index};
     use crate::{
-        shell_parse::{active_segment_tokens, tokens_before_cursor},
+        shell_parse::{active_context, active_segment_tokens, tokens_before_cursor},
         usage::UsageState,
     };
 
@@ -1569,6 +1633,34 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "which docker"));
+    }
+
+    #[test]
+    fn command_substitution_routes_to_inner_git() {
+        let input = "echo $(git che";
+        let candidates =
+            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "echo $(git checkout"));
+    }
+
+    #[test]
+    fn backtick_substitution_routes_to_inner_git() {
+        let input = "echo `git che";
+        let candidates =
+            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "echo `git checkout"));
+    }
+
+    #[test]
+    fn redirection_context_is_exposed_by_parser() {
+        let input = "echo hi > lo";
+        let context = active_context(input, input.len());
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.last().unwrap().text, "lo");
     }
 
     #[test]
