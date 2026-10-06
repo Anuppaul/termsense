@@ -535,4 +535,36 @@ mod tests {
         assert_eq!(typed_parent, "~/");
         assert_eq!(base, "Doc");
     }
+
+    #[test]
+    fn git_subcommands_are_contextual() {
+        let candidates = super::suggest(&[], "git che", 7, 20);
+        let values: Vec<&str> = candidates
+            .iter()
+            .map(|candidate| candidate.insert_text.as_str())
+            .collect();
+        assert!(values.contains(&"checkout"));
+        assert!(values.contains(&"check-ignore"));
+        assert!(!values.contains(&"status"));
+    }
+
+    #[test]
+    fn systemctl_subcommands_are_contextual() {
+        let candidates = super::suggest(&[], "systemctl res", 13, 20);
+        let values: Vec<&str> = candidates
+            .iter()
+            .map(|candidate| candidate.insert_text.as_str())
+            .collect();
+        assert!(values.contains(&"restart"));
+        assert!(values.contains(&"reset-failed"));
+        assert!(values.contains(&"rescue"));
+    }
+
+    #[test]
+    fn sudo_preserves_nested_command_context() {
+        let candidates = super::suggest(&[], "sudo git che", 12, 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.insert_text == "checkout"));
+    }
 }
