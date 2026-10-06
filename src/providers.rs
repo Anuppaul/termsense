@@ -202,7 +202,7 @@ const GREP_OPTIONS: &[&str] = &[
     "--count", "--exclude=", "--exclude-dir=", "--files-with-matches", "--fixed-strings",
     "--ignore-case", "--include=", "--invert-match", "--line-number", "--max-count=",
     "--no-filename", "--only-matching", "--quiet", "--recursive", "--word-regexp",
-    "-E", "-F", "-H", "-I", "-L", "-l", "-n", "-o", "-q", "-r", "-R", "-v", "-w",
+    "--file=", "-E", "-F", "-H", "-I", "-L", "-f", "-l", "-n", "-o", "-q", "-r", "-R", "-v", "-w",
 ];
 
 const TAR_OPTIONS: &[&str] = &[
@@ -887,6 +887,36 @@ fn add_ssh_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Toke
 }
 
 fn add_find_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if tokens.len() >= 3 {
+        let previous = tokens[tokens.len() - 2].text.as_str();
+        match previous {
+            "-user" => {
+                add_values(out, current, users(), "user", "find-local", 750);
+                return;
+            }
+            "-group" => {
+                add_values(out, current, groups(), "group", "find-local", 750);
+                return;
+            }
+            "-type" => {
+                add_static(
+                    out,
+                    &["b", "c", "d", "f", "l", "p", "s"],
+                    current,
+                    "argument-value",
+                    "find-schema",
+                    700,
+                );
+                return;
+            }
+            "-newer" | "-anewer" | "-cnewer" | "-samefile" => {
+                add_filesystem_candidates(out, current, false);
+                return;
+            }
+            _ => {}
+        }
+    }
+
     if current.text.starts_with('-') {
         add_static(out, FIND_OPTIONS, current, "option", "find-schema", 650);
         return;
@@ -898,6 +928,19 @@ fn add_find_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Tok
 }
 
 fn add_grep_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if current.text.starts_with("--file=") {
+        add_path_assignment_candidates(out, current, "--file=");
+        return;
+    }
+
+    if tokens.len() >= 3 {
+        let previous = tokens[tokens.len() - 2].text.as_str();
+        if matches!(previous, "-f" | "--file") {
+            add_filesystem_candidates(out, current, false);
+            return;
+        }
+    }
+
     if current.text.starts_with('-') {
         add_static(out, GREP_OPTIONS, current, "option", "grep-schema", 650);
         return;
@@ -1589,6 +1632,16 @@ mod tests {
     fn find_options_are_contextual() {
         let candidates = super::suggest(&[], &UsageState::default(), "find ./ -na", 11, 20);
         assert!(candidates.iter().any(|candidate| candidate.display_text == "find ./ -name"));
+    }
+
+    #[test]
+    fn find_type_values_are_contextual() {
+        let input = "find ./ -type d";
+        let candidates =
+            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "find ./ -type d"));
     }
 
     #[test]
