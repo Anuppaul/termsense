@@ -197,6 +197,9 @@ fn run(cli: Cli) -> Result<(), String> {
             if let Some(path) = runtime_cache::root_path() {
                 println!("ephemeral runtime cache: {}", path.display());
             }
+            if let Some(path) = config_path() {
+                println!("config file: {}", path.display());
+            }
         }
     }
     Ok(())
@@ -247,6 +250,14 @@ fn doctor() -> Result<(), String> {
             "not installed"
         }
     );
+
+    if let Some(path) = config_path() {
+        if path.is_file() {
+            println!("  config: {}", path.display());
+        } else {
+            println!("  config: defaults ({} not found)", path.display());
+        }
+    }
 
     if env::var("BASH_VERSION").is_ok() {
         println!("  Bash: detected");
@@ -322,6 +333,17 @@ fn discover_path_commands(dirs: &[PathBuf]) -> Vec<CommandEntry> {
 
 fn is_executable_file(meta: &fs::Metadata) -> bool {
     meta.is_file() && meta.permissions().mode() & 0o111 != 0
+}
+
+fn config_path() -> Option<PathBuf> {
+    if let Some(dir) = env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
+        return Some(PathBuf::from(dir).join("termsense/config.conf"));
+    }
+
+    env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .map(|home| home.join(".config/termsense/config.conf"))
 }
 
 fn cache_path() -> Option<PathBuf> {
