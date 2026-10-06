@@ -674,7 +674,7 @@ The Bash 5+ automatic renderer hooks ASCII printable keystrokes through Readline
 
 The parser now understands open single/double quotes, backslash-escaped characters, active segments separated by `|`, `&&`, `||`, `;`, or background `&`, common file redirections, and open `$(...)` / backtick command substitutions. Separator characters inside quotes or escaped separators do not split the active context.
 
-It is still deliberately not a full Bash AST. Heredoc bodies, closed-group execution semantics, arithmetic expansion semantics, every process/redirection edge case, and complete compound-shell grammar remain future parser work.
+It is still deliberately not a full Bash AST. Heredoc bodies and open arithmetic expansions are safely suppressed rather than interpreted as commands. Deeper closed-group execution semantics, full arithmetic semantics, every process/redirection edge case, and complete compound-shell grammar remain post-v0.1 work.
 
 Multiline redraw hardening and broader shell/keymap compatibility also remain active implementation work.
 
