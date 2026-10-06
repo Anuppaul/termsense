@@ -676,12 +676,13 @@ The parser now understands open single/double quotes, backslash-escaped characte
 
 It is still deliberately not a full Bash AST. Heredoc bodies and open arithmetic expansions are safely suppressed rather than interpreted as commands. Deeper closed-group execution semantics, full arithmetic semantics, every process/redirection edge case, and complete compound-shell grammar remain post-v0.1 work.
 
-Multiline redraw hardening and broader shell/keymap compatibility also remain active implementation work.
+Advanced multiline redraw hardening and broader Readline keymap compatibility are intentionally deferred to post-v0.1.
 
 ## Post-v0.1
 
 Post-v0.1 work is intentionally separated from the first release:
 
+- advanced multiline redraw and broader Readline/vi-keymap compatibility;
 - deeper closed-group/compound-shell AST semantics;
 - more specialized option-value schemas beyond generic man metadata;
 - additional project/task-runner adapters;
