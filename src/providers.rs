@@ -688,6 +688,29 @@ const CURL_OPTIONS: &[&str] = &[
     "-v",
 ];
 
+const DF_OPTIONS: &[&str] = &[
+    "--all",
+    "--human-readable",
+    "--inodes",
+    "--print-type",
+    "-a",
+    "-h",
+    "-i",
+    "-T",
+];
+const DU_OPTIONS: &[&str] = &[
+    "--all",
+    "--apparent-size",
+    "--human-readable",
+    "--max-depth=",
+    "--one-file-system",
+    "--summarize",
+    "-a",
+    "-h",
+    "-s",
+    "-x",
+];
+
 const COMMAND_LOOKUP_OPTIONS: &[&str] = &["--all", "--help", "--version", "-a", "-v", "-V"];
 
 const TERMSENSE_SUBCOMMANDS: &[&str] = &[
@@ -784,6 +807,16 @@ pub(crate) fn suggest(
         "grep" | "egrep" | "fgrep" => add_grep_candidates(&mut candidates, effective, current),
         "tar" => add_tar_candidates(&mut candidates, effective, current),
         "curl" => add_curl_candidates(&mut candidates, effective, current),
+        "df" => {
+            if current.text.starts_with('-') {
+                add_static(&mut candidates, DF_OPTIONS, current, "option", "df-schema", 650);
+            }
+        }
+        "du" => {
+            if current.text.starts_with('-') {
+                add_static(&mut candidates, DU_OPTIONS, current, "option", "du-schema", 650);
+            }
+        }
         "which" | "whereis" | "type" | "command" | "man" => {
             add_command_lookup_candidates(&mut candidates, commands, effective, current)
         }
@@ -2796,6 +2829,22 @@ fn candidate_description(source: &str, kind: &str, value: &str) -> &'static str 
             "--verbose" | "-v" => "Show detailed request, response, and connection diagnostics",
             _ => "curl behavior",
         },
+        "df-schema" => match value {
+            "--all" | "-a" => "Include pseudo, duplicate, or inaccessible file systems",
+            "--human-readable" | "-h" => "Print sizes in powers of 1024 using readable units",
+            "--inodes" | "-i" => "Show inode usage instead of block usage",
+            "--print-type" | "-T" => "Print each file system's type",
+            _ => "df behavior",
+        },
+        "du-schema" => match value {
+            "--all" | "-a" => "Count every file, not only directories",
+            "--apparent-size" => "Show apparent file sizes instead of disk usage",
+            "--human-readable" | "-h" => "Print sizes in readable units",
+            "--max-depth=" => "Limit directory totals to the specified depth",
+            "--one-file-system" | "-x" => "Skip directories on other file systems",
+            "--summarize" | "-s" => "Show one total for each argument",
+            _ => "du behavior",
+        },
         "command-lookup-schema" => match value {
             "--all" | "-a" => "Show every matching executable found in PATH",
             "--help" => "Show help for the command lookup utility",
@@ -3176,6 +3225,31 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "curl --header"));
+    }
+
+    #[test]
+    fn df_and_du_options_are_contextual_and_descriptive() {
+        let df = super::suggest(&[], &UsageState::default(), "df --h", 6, 20);
+        let human_readable = df
+            .iter()
+            .find(|candidate| candidate.insert_text == "--human-readable")
+            .expect("df human-readable option");
+        assert_eq!(
+            human_readable.description,
+            "Print sizes in powers of 1024 using readable units"
+        );
+
+        let du = super::suggest(&[], &UsageState::default(), "du --s", 6, 20);
+        let summarize = du
+            .iter()
+            .find(|candidate| candidate.insert_text == "--summarize")
+            .expect("du summarize option");
+        assert_eq!(summarize.description, "Show one total for each argument");
+
+        let wrong_command = super::suggest(&[], &UsageState::default(), "df --su", 7, 20);
+        assert!(!wrong_command
+            .iter()
+            .any(|candidate| candidate.insert_text == "--summarize"));
     }
 
     #[test]
