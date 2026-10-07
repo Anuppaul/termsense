@@ -82,6 +82,29 @@ binary="$bin_dir/termsense"
 mkdir -p "$bin_dir"
 install -m 0755 target/release/termsense "$binary"
 
+_termsense_canonical_dir() {
+  local dir="${1:-.}"
+  (cd -P -- "$dir" 2>/dev/null && pwd -P)
+}
+
+_termsense_path_contains() {
+  local needle="$1"
+  local canonical_needle entry canonical_entry
+  local -a path_entries
+  canonical_needle="$(_termsense_canonical_dir "$needle")" || return 1
+  IFS=: read -r -a path_entries <<< "${PATH:-}"
+  for entry in "${path_entries[@]}"; do
+    canonical_entry="$(_termsense_canonical_dir "$entry")" || continue
+    [[ "$canonical_entry" == "$canonical_needle" ]] && return 0
+  done
+  return 1
+}
+
+bin_dir_on_path=0
+if _termsense_path_contains "$bin_dir"; then
+  bin_dir_on_path=1
+fi
+
 config_root="${XDG_CONFIG_HOME:-$HOME/.config}/termsense"
 config_file="$config_root/config.conf"
 mkdir -p "$config_root"
@@ -161,6 +184,10 @@ EOF
   printf '\n'
   if (( enable_shell )); then
     printf '  %sOpen a new Bash shell or run:%s source %q\n' "$dim" "$reset" "$bashrc"
+  fi
+  if (( ! bin_dir_on_path )); then
+    printf '  %sNote:%s %s is not on your PATH yet.\n' "$bold" "$reset" "$bin_dir"
+    printf '  To run termsense directly, add it with: export PATH=%q:\$PATH\n' "$bin_dir"
   fi
   printf '\n'
 }
