@@ -274,6 +274,11 @@ const GIT_REF_COMMANDS: &[&str] = &[
     "branch", "checkout", "merge", "rebase", "reset", "restore", "show", "switch",
 ];
 
+const GO_SUBCOMMANDS: &[&str] = &[
+    "build", "clean", "doc", "env", "fix", "fmt", "generate", "get", "install", "list", "mod",
+    "run", "test", "tool", "version", "vet", "work",
+];
+
 const CARGO_SUBCOMMANDS: &[&str] = &[
     "add",
     "bench",
@@ -747,6 +752,7 @@ pub(crate) fn suggest(
         "systemctl" => add_systemctl_candidates(&mut candidates, effective, current),
         "docker" => add_docker_candidates(&mut candidates, effective, current),
         "cd" => add_directory_candidates(&mut candidates, current),
+        "go" => add_go_candidates(&mut candidates, effective, current),
         "cargo" => add_cargo_candidates(&mut candidates, effective, current),
         "pnpm" => add_package_manager_candidates(
             &mut candidates,
@@ -1199,6 +1205,12 @@ fn add_docker_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &T
                 700,
             );
         }
+    }
+}
+
+fn add_go_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
+    if tokens.len() == 2 {
+        add_static(out, GO_SUBCOMMANDS, current, "subcommand", "go-schema", 500);
     }
 }
 
@@ -2509,6 +2521,26 @@ fn candidate_description(source: &str, kind: &str, value: &str) -> &'static str 
             "--workspace" => "Apply the command to every workspace member",
             _ => "Cargo behavior",
         },
+        "go-schema" => match value {
+            "build" => "Compile packages and dependencies",
+            "clean" => "Remove object files and cached build outputs",
+            "doc" => "Show documentation for a package",
+            "env" => "Print Go environment information",
+            "fix" => "Update packages to use new APIs",
+            "fmt" => "Format Go source files",
+            "generate" => "Run go:generate directives in packages",
+            "get" => "Add or update module dependencies",
+            "install" => "Compile and install packages",
+            "list" => "List packages or modules",
+            "mod" => "Manage module requirements and metadata",
+            "run" => "Compile and run Go source files",
+            "test" => "Run tests for packages",
+            "tool" => "Run a Go tool",
+            "version" => "Print the Go version",
+            "vet" => "Report suspicious Go constructs",
+            "work" => "Manage Go workspace files",
+            _ => "Go behavior",
+        },
         "package-manager-schema" => match value {
             "access" => "Manage package access permissions on the registry",
             "add" | "install" => "Install dependencies into the project",
@@ -3176,6 +3208,19 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "curl --header"));
+    }
+
+    #[test]
+    fn go_subcommands_are_contextual() {
+        let candidates = super::suggest(&[], &UsageState::default(), "go te", 5, 20);
+        let test = candidates
+            .iter()
+            .find(|candidate| candidate.insert_text == "test")
+            .expect("go test subcommand");
+        assert_eq!(test.description, "Run tests for packages");
+        assert!(!candidates
+            .iter()
+            .any(|candidate| candidate.insert_text == "vet"));
     }
 
     #[test]
