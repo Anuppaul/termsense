@@ -109,6 +109,12 @@ const GIT_SWITCH_OPTIONS: &[&str] = &[
     "--track",
 ];
 
+const GIT_BRANCH_OPTIONS: &[&str] = &[
+    "--all", "--copy", "--delete", "--force", "--list", "--merged", "--move", "--no-merged",
+    "--remotes", "--show-current", "--verbose", "-a", "-c", "-C", "-d", "-D", "-m", "-M",
+    "-r", "-v",
+];
+
 const GIT_LOG_OPTIONS: &[&str] = &[
     "--all",
     "--author=",
@@ -1081,6 +1087,7 @@ fn add_git_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Toke
             "checkout" => GIT_CHECKOUT_OPTIONS,
             "switch" => GIT_SWITCH_OPTIONS,
             "log" => GIT_LOG_OPTIONS,
+            "branch" => GIT_BRANCH_OPTIONS,
             _ => &[],
         };
         let source = match subcommand {
@@ -1088,6 +1095,7 @@ fn add_git_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Toke
             "checkout" => "git-checkout-schema",
             "switch" => "git-switch-schema",
             "log" => "git-log-schema",
+            "branch" => "git-branch-schema",
             _ => "git-schema",
         };
         add_static(out, options, current, "option", source, 650);
@@ -2326,6 +2334,21 @@ fn candidate_description(source: &str, kind: &str, value: &str) -> &'static str 
             "--track" => "Configure the new branch to track its start point",
             _ => "Git switch behavior",
         },
+        "git-branch-schema" => match value {
+            "--all" | "-a" => "List both local and remote-tracking branches",
+            "--copy" | "-c" | "-C" => "Copy a branch to a new name",
+            "--delete" | "-d" => "Delete a branch after checking it is merged",
+            "-D" => "Force-delete a branch even if it is unmerged",
+            "--force" => "Force branch creation, movement, or deletion",
+            "--list" => "List branch names matching a pattern",
+            "--merged" => "List branches already merged into the chosen commit",
+            "--move" | "-m" | "-M" => "Rename a branch",
+            "--no-merged" => "List branches not merged into the chosen commit",
+            "--remotes" | "-r" => "List remote-tracking branches",
+            "--show-current" => "Print the current branch name",
+            "--verbose" | "-v" => "Show each branch's commit and upstream",
+            _ => "Git branch behavior",
+        },
         "git-log-schema" => match value {
             "--all" => "Show commits reachable from all refs",
             "--author=" => "Show only commits whose author matches the pattern",
@@ -3176,6 +3199,21 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "curl --header"));
+    }
+
+    #[test]
+    fn git_branch_options_are_contextual_and_descriptive() {
+        let candidates = super::suggest(&[], &UsageState::default(), "git branch --d", 14, 20);
+        let delete = candidates
+            .iter()
+            .find(|candidate| candidate.insert_text == "--delete")
+            .expect("git branch delete option");
+        assert_eq!(delete.description, "Delete a branch after checking it is merged");
+
+        let other_command = super::suggest(&[], &UsageState::default(), "git log --d", 11, 20);
+        assert!(!other_command
+            .iter()
+            .any(|candidate| candidate.insert_text == "--delete"));
     }
 
     #[test]
