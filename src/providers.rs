@@ -2215,16 +2215,42 @@ fn candidate_description(source: &str, kind: &str, value: &str) -> &'static str 
             _ => "Installed executable command",
         },
         "shell-builtin" => match value {
+            "alias" => "Create or display command aliases",
+            "bg" => "Resume a stopped job in the background",
+            "break" => "Exit the current loop",
             "cd" => "Change the current directory",
+            "command" => "Run a command without resolving shell functions",
+            "continue" => "Skip to the next iteration of the current loop",
+            "declare" => "Set or display shell variables and attributes",
+            "dirs" => "Display the directory stack",
+            "disown" => "Remove a job from Bash's job table",
             "echo" => "Print text or variable values",
+            "enable" => "Enable or disable shell builtins",
+            "eval" => "Execute the supplied arguments as shell code",
+            "exec" => "Replace the shell process or change its file descriptors",
             "export" => "Set variables for child processes",
+            "fc" => "List, edit, or re-execute commands from history",
+            "fg" => "Resume a job in the foreground",
+            "getopts" => "Parse option arguments for a shell script",
             "history" => "Show or manage Bash command history",
+            "jobs" => "List active jobs started by this shell",
+            "local" => "Declare a variable scoped to the current function",
+            "mapfile" => "Read lines from input into an indexed array",
+            "popd" => "Remove a directory from the directory stack",
             "printf" => "Print formatted text",
+            "pushd" => "Change directory and update the directory stack",
             "pwd" => "Print the current directory",
             "read" => "Read input into shell variables",
+            "return" => "Exit a function with a status code",
+            "set" => "Set shell options or positional parameters",
+            "shift" => "Remove positional parameters from the start of the list",
             "source" | "." => "Run commands from a file in this shell",
+            "trap" => "Register a handler for a signal or shell event",
             "type" => "Describe how Bash resolves a command",
+            "ulimit" => "Display or change shell resource limits",
+            "umask" => "Display or set the default file permission mask",
             "unset" => "Remove shell variables or functions",
+            "wait" => "Wait for a background job and return its status",
             _ => "Bash built-in command",
         },
         "shell-alias" => "Shell alias",
@@ -3176,6 +3202,25 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "curl --header"));
+    }
+
+    #[test]
+    fn common_bash_builtins_have_behavior_specific_descriptions() {
+        let examples = [
+            ("alias", "Create or display command aliases"),
+            ("bg", "Resume a stopped job in the background"),
+            ("declare", "Set or display shell variables and attributes"),
+            ("eval", "Execute the supplied arguments as shell code"),
+            ("mapfile", "Read lines from input into an indexed array"),
+            ("trap", "Register a handler for a signal or shell event"),
+            ("wait", "Wait for a background job and return its status"),
+        ];
+        for (builtin, expected) in examples {
+            assert_eq!(
+                super::candidate_description("shell-builtin", "builtin", builtin),
+                expected
+            );
+        }
     }
 
     #[test]
