@@ -957,6 +957,61 @@ mod tests {
     }
 
     #[test]
+    fn stdout_and_stderr_redirections_keep_the_active_path_target() {
+        let input = "cmd >out 2>err";
+        let context = active_context(input, input.len());
+
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.last().expect("target").text, "err");
+    }
+
+    #[test]
+    fn append_redirection_after_quoted_arguments_keeps_the_path_target() {
+        let input = "printf \"%s\" \"hello world\" >>log";
+        let context = active_context(input, input.len());
+
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.last().expect("target").text, "log");
+    }
+
+    #[test]
+    fn command_argument_after_redirection_is_the_active_token() {
+        let input = "cmd >out --ver";
+        let context = active_context(input, input.len());
+
+        assert!(!context.redirection_target);
+        assert_eq!(context.tokens.last().expect("active token").text, "--ver");
+    }
+
+    #[test]
+    fn descriptor_duplication_does_not_hide_a_later_path_target() {
+        let input = "cmd 2>&1 >log";
+        let context = active_context(input, input.len());
+
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.last().expect("target").text, "log");
+    }
+
+    #[test]
+    fn escaped_space_in_redirection_target_is_unescaped() {
+        let input = "cmd >My\\ File";
+        let context = active_context(input, input.len());
+
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.last().expect("target").text, "My File");
+    }
+
+    #[test]
+    fn redirection_inside_command_substitution_keeps_path_context() {
+        let input = "echo $(cat <fi";
+        let context = active_context(input, input.len());
+
+        assert!(context.redirection_target);
+        assert_eq!(context.tokens.first().expect("inner command").text, "cat");
+        assert_eq!(context.tokens.last().expect("target").text, "fi");
+    }
+
+    #[test]
     fn dollar_paren_routes_to_inner_command() {
         let input = "echo $(git che";
         let tokens = active_segment_tokens(input, input.len());
