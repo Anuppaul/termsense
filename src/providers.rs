@@ -3164,8 +3164,7 @@ mod tests {
     #[test]
     fn sudo_apt_palette_prioritizes_update() {
         let input = "sudo apt ";
-        let candidates =
-            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
 
         assert_eq!(
             candidates.first().map(|candidate| candidate.display_text.as_str()),
@@ -3176,8 +3175,7 @@ mod tests {
     #[test]
     fn sudo_apt_update_keeps_palette_available_after_subcommand() {
         let input = "sudo apt update ";
-        let candidates =
-            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+        let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
 
         assert!(!candidates.is_empty());
         assert!(candidates
