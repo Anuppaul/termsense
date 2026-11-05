@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- fix PATH indexing of executable symlinks (including `sudo`/`apt`), invalidate stale command indexes, and fall back to local PATH resolution for full-command templates;
 - progressively complete reusable full commands (e.g. `s`, `sudo`, `sudo a`, `sudo apt u` → `sudo apt update`), preserving the active-token insertion range and descriptions;
 - keep the live suggestion overlay visible near the bottom of the terminal by reserving viewport rows before drawing;
 - prioritize `sudo apt update` / `apt update` in a fresh APT subcommand palette;
