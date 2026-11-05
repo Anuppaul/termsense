@@ -66,6 +66,7 @@ Starter work:
 - `termsense doctor`;
 - Bash initialization;
 - automatic suggestion list while typing;
+- viewport-aware suggestion rendering that keeps the palette visible near the terminal bottom;
 - concise one-line descriptions beside every suggestion row;
 - inline dim ghost suffix for the selected suggestion;
 - Up / Down selection while suggestions are active;
