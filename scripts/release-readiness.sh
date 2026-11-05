@@ -184,6 +184,20 @@ awk -F '\t' 'NR == 1 && $2 == "sudo apt update" { found = 1 } END { exit !found 
 grep -Fq "sudo apt update --quiet" "$tmp/suggest-sudo-apt-update.txt" \
   || fail "sudo apt update palette should remain available for options"
 
+./target/release/termsense suggest "echo done &&" --limit 20 > "$tmp/suggest-and-empty.txt"
+awk -F '\t' '$1 == "sudo apt update" && $2 == "echo done &&sudo apt update" { found = 1 } END { exit !found }' \
+  "$tmp/suggest-and-empty.txt" \
+  || fail "&& without a next word must offer full command templates"
+
+./target/release/termsense suggest "sudo apt update && " --limit 20 > "$tmp/suggest-and-followup.txt"
+awk -F '\t' 'NR == 1 && $1 == "sudo apt upgrade" && $2 == "sudo apt update && sudo apt upgrade" { ok = 1 } END { exit !ok }' \
+  "$tmp/suggest-and-followup.txt" \
+  || fail "&& after apt update must prioritize sudo apt upgrade"
+
+./target/release/termsense suggest "sudo apt update" --limit 20 > "$tmp/suggest-and-chain.txt"
+grep -Fq "sudo apt update && sudo apt upgrade" "$tmp/suggest-and-chain.txt" \
+  || fail "completed apt update must offer an && upgrade command chain"
+
 ./target/release/termsense suggest "git status && docker lo" --limit 20 > "$tmp/suggest-segment.txt"
 grep -Fq "git status && docker logs" "$tmp/suggest-segment.txt" \
   || fail "active command segment smoke failed"
