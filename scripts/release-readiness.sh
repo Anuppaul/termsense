@@ -185,9 +185,14 @@ grep -Fq "sudo apt update --quiet" "$tmp/suggest-sudo-apt-update.txt" \
   || fail "sudo apt update palette should remain available for options"
 
 ./target/release/termsense suggest "echo done &&" --limit 20 > "$tmp/suggest-and-empty.txt"
-awk -F '\t' '$1 == "sudo apt update" && $2 == "echo done &&sudo apt update" { found = 1 } END { exit !found }' \
+awk -F '\t' '$1 == "sudo apt update" && $2 == "echo done && sudo apt update" { found = 1 } END { exit !found }' \
   "$tmp/suggest-and-empty.txt" \
   || fail "&& without a next word must offer full command templates"
+
+./target/release/termsense suggest "echo done &&s" --limit 20 > "$tmp/suggest-and-nospace.txt"
+awk -F '\t' '$1 == " sudo apt update" && $2 == "echo done && sudo apt update" { found = 1 } END { exit !found }' \
+  "$tmp/suggest-and-nospace.txt" \
+  || fail "&& prefix without whitespace must insert a space and the next command"
 
 ./target/release/termsense suggest "sudo apt update && " --limit 20 > "$tmp/suggest-and-followup.txt"
 awk -F '\t' 'NR == 1 && $1 == "sudo apt upgrade" && $2 == "sudo apt update && sudo apt upgrade" { ok = 1 } END { exit !ok }' \
