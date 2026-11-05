@@ -17,7 +17,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-const INDEX_VERSION: u32 = 1;
+const INDEX_VERSION: u32 = 2;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -362,7 +362,10 @@ fn discover_path_commands(dirs: &[PathBuf]) -> Vec<CommandEntry> {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            let Ok(meta) = entry.metadata() else {
+            // DirEntry::metadata is lstat-like on Unix: it can describe
+            // the symlink rather than the executable it points to.
+            // PATH commands often use executable symlinks, so follow them.
+            let Ok(meta) = fs::metadata(&path) else {
                 continue;
             };
             if !is_executable_file(&meta) {
@@ -506,6 +509,33 @@ mod tests {
         let commands = discover_path_commands(&[root.clone()]);
         assert!(commands.iter().any(|entry| entry.name == "hello"));
         assert!(!commands.iter().any(|entry| entry.name == "notes"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn path_discovery_includes_executable_symlinks_but_not_broken_links() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "termsense-symlink-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+
+        let target = root.join("target");
+        fs::write(&target, "#!/bin/sh\n").unwrap();
+        let mut permissions = fs::metadata(&target).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&target, permissions).unwrap();
+
+        symlink("target", root.join("sudo")).unwrap();
+        symlink("does-not-exist", root.join("broken")).unwrap();
+
+        let commands = discover_path_commands(&[root.clone()]);
+        assert!(commands.iter().any(|entry| entry.name == "sudo"));
+        assert!(!commands.iter().any(|entry| entry.name == "broken"));
 
         let _ = fs::remove_dir_all(root);
     }
