@@ -913,9 +913,14 @@ fn add_command_template_candidates(
             continue;
         };
 
-        // If the user has typed exactly "sudo", the practical full commands
-        // are intentionally more useful than the already-complete bare sudo.
-        let preference = if matches!(typed, "sudo" | "sudo apt") { 6_000 } else { 0 };
+        // Bare "su", "sudo", and "sudo apt" can win via the 10_000-point
+        // exact-match score. Keep full commands first at these boundaries,
+        // including after the largest possible 1_600-point usage boost.
+        let preference = if matches!(typed, "su" | "sudo" | "sudo apt") {
+            6_000
+        } else {
+            0
+        };
 
         out.push(Candidate {
             insert_text: insert_text.to_owned(),
@@ -3174,6 +3179,45 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "sudo apt autoremove"));
+    }
+
+    #[test]
+    fn su_prefix_prioritizes_full_templates_over_exact_su_binary() {
+        let commands = vec![
+            crate::CommandEntry {
+                name: "su".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/su"),
+            },
+            crate::CommandEntry {
+                name: "sudo".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/sudo"),
+            },
+            crate::CommandEntry {
+                name: "apt".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/apt"),
+            },
+        ];
+
+        let candidates = super::suggest(&commands, &UsageState::default(), "su", 2, 20);
+        assert_eq!(
+            candidates.first().map(|candidate| candidate.display_text.as_str()),
+            Some("sudo apt update")
+        );
+        let update = candidates
+            .iter()
+            .find(|candidate| candidate.display_text == "sudo apt update")
+            .expect("sudo apt update template");
+        let bare_su = candidates
+            .iter()
+            .find(|candidate| candidate.display_text == "su")
+            .expect("su executable");
+        assert!(update.score > bare_su.score + 1_600);
+        assert_eq!(update.insert_text, "sudo apt update");
+        assert_eq!(update.replacement_start, 0);
+        assert_eq!(update.replacement_end, 2);
+        assert!(
+            candidates.iter().any(|candidate| candidate.display_text == "sudo apt upgrade")
+        );
     }
 
     #[test]
