@@ -3201,7 +3201,8 @@ mod tests {
             ("sudo apt ", "update"),
             ("sudo apt u", "update"),
         ] {
-            let candidates = super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
+            let candidates =
+                super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
             let first = candidates.first().expect("command suggestions");
 
             assert_eq!(first.display_text, "sudo apt update", "prefix: {typed:?}");
