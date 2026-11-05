@@ -58,7 +58,7 @@ Starter work:
 - deterministic prefix ranking;
 - cursor-aware replacement ranges;
 - command discovery after `sudo `;
-- full-command templates from the first token, such as `s` → `sudo apt update` / `sudo apt upgrade` when those commands are installed;
+- progressive full-command templates across the entire typed prefix (`s`, `sudo`, `sudo a`, `sudo apt u` → `sudo apt update`), with token-safe insertion and installed-command checks;
 - plain-text and JSON suggestion output;
 - `termsense list-commands`;
 - `termsense suggest`;
