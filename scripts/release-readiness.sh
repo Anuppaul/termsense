@@ -136,10 +136,26 @@ awk -F '\t' '$2 == "sudo git checkout" && $9 == "Switch branches or restore file
   || fail "suggestion description protocol smoke failed"
 
 ./target/release/termsense suggest "s" --limit 20 > "$tmp/suggest-command-templates.txt"
-grep -Fq "sudo apt update" "$tmp/suggest-command-templates.txt" \
-  || fail "first-token prefix should include sudo apt update template"
+awk -F '\t' 'NR == 1 && $1 == "sudo apt update" && $2 == "sudo apt update" { ok = 1 } END { exit !ok }' \
+  "$tmp/suggest-command-templates.txt" \
+  || fail "typing s must prioritize the full sudo apt update command"
 grep -Fq "sudo apt upgrade" "$tmp/suggest-command-templates.txt" \
-  || fail "first-token prefix should include sudo apt upgrade template"
+  || fail "typing s must include the full sudo apt upgrade command"
+
+./target/release/termsense suggest "sudo" --limit 20 > "$tmp/suggest-template-sudo.txt"
+awk -F '\t' 'NR == 1 && $2 == "sudo apt update" { ok = 1 } END { exit !ok }' \
+  "$tmp/suggest-template-sudo.txt" \
+  || fail "typing sudo must prioritize the full sudo apt update command"
+
+./target/release/termsense suggest "sudo a" --limit 20 > "$tmp/suggest-template-sudo-a.txt"
+awk -F '\t' 'NR == 1 && $1 == "apt update" && $2 == "sudo apt update" { ok = 1 } END { exit !ok }' \
+  "$tmp/suggest-template-sudo-a.txt" \
+  || fail "typing sudo a must complete the entire sudo apt update command"
+
+./target/release/termsense suggest "sudo apt u" --limit 20 > "$tmp/suggest-template-sudo-apt-u.txt"
+awk -F '\t' 'NR == 1 && $1 == "update" && $2 == "sudo apt update" { ok = 1 } END { exit !ok }' \
+  "$tmp/suggest-template-sudo-apt-u.txt" \
+  || fail "typing sudo apt u must complete the full command safely"
 
 ./target/release/termsense suggest "sudo apt " --limit 20 > "$tmp/suggest-sudo-apt.txt"
 awk -F '\t' 'NR == 1 && $2 == "sudo apt update" { found = 1 } END { exit !found }' \
