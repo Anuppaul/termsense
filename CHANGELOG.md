@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- keep the live suggestion overlay visible near the bottom of the terminal by reserving viewport rows before drawing;
+- prioritize `sudo apt update` / `apt update` in a fresh APT subcommand palette;
+- keep the APT palette available after a completed subcommand such as `sudo apt update ` by offering contextual options;
+- warn when a custom install prefix is outside PATH using canonical directory comparison.
+
 ## 0.1.0 — 2026-10-06
 
 Initial TermSense release scope:
