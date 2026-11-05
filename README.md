@@ -99,6 +99,7 @@ Starter work:
 - option-value path completion such as ssh -i, tar -f and curl -o;
 - command-name argument intelligence for which/whereis/type/command/man;
 - active command-segment parsing across pipes, &&, ||, semicolons and background separators;
+- full-command suggestions after `&&`, including `sudo apt update && sudo apt upgrade` and zero-space `&&s` completion, without executing either command;
 - native user-local install/uninstall scripts;
 - local Debian package builder for amd64/arm64;
 - filesystem completion for input/output redirection targets;
