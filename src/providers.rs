@@ -921,7 +921,9 @@ fn add_command_template_candidates(
                 .to_owned(),
             kind: "command-template",
             source: "command-template",
-            score: score + boost + preference,
+            // Adaptive usage boosts are capped at 1,600. The intent of a
+            // first-token command template must survive prior bare-command use.
+            score: score + boost + preference + 2_000,
             replacement_start: current.start,
             replacement_end: current.end,
             usage_key: usage_key_for("command-template", "command-template", template),
@@ -3146,6 +3148,34 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "sudo apt autoremove"));
+    }
+
+    #[test]
+    fn full_command_templates_beat_bare_sudo_usage_boost() {
+        let commands = vec![
+            crate::CommandEntry {
+                name: "sudo".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/sudo"),
+            },
+            crate::CommandEntry {
+                name: "apt".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/apt"),
+            },
+        ];
+        let candidates = super::suggest(&commands, &UsageState::default(), "s", 1, 30);
+        let update = candidates
+            .iter()
+            .find(|candidate| candidate.display_text == "sudo apt update")
+            .expect("full template");
+        let bare_sudo = candidates
+            .iter()
+            .find(|candidate| candidate.display_text == "sudo")
+            .expect("bare sudo");
+
+        assert!(
+            update.score > bare_sudo.score + 1_600,
+            "template must outrank the maximum adaptive usage boost for sudo"
+        );
     }
 
     #[test]
