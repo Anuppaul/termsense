@@ -135,6 +135,17 @@ awk -F '\t' '$2 == "sudo git checkout" && $9 == "Switch branches or restore file
   "$tmp/suggest-context.txt" \
   || fail "suggestion description protocol smoke failed"
 
+# Validate the real PATH index, not only synthetic in-memory command fixtures.
+# This guards executable symlinks such as /usr/bin/apt or /usr/bin/sudo.
+./target/release/termsense index > "$tmp/reindexed.txt"
+if command -v sudo >/dev/null 2>&1 && command -v apt >/dev/null 2>&1; then
+  ./target/release/termsense list-commands > "$tmp/command-list.txt"
+  grep -Fxq "sudo" "$tmp/command-list.txt" \
+    || fail "executable sudo must be discoverable from PATH"
+  grep -Fxq "apt" "$tmp/command-list.txt" \
+    || fail "executable apt must be discoverable from PATH"
+fi
+
 ./target/release/termsense suggest "s" --limit 20 > "$tmp/suggest-command-templates.txt"
 awk -F '\t' 'NR == 1 && $1 == "sudo apt update" && $2 == "sudo apt update" { ok = 1 } END { exit !ok }' \
   "$tmp/suggest-command-templates.txt" \
