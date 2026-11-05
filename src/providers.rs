@@ -946,11 +946,14 @@ fn command_available_for_template(commands: &[CommandEntry], name: &str) -> bool
         return false;
     };
 
-    env::split_paths(&path_env).any(|dir| {
+    executable_on_path(&path_env, name)
+}
+
+fn executable_on_path(path_env: &std::ffi::OsStr, name: &str) -> bool {
+    env::split_paths(path_env).any(|dir| {
         let candidate = dir.join(name);
-        fs::metadata(&candidate).is_ok_and(|meta| {
-            meta.is_file() && meta.permissions().mode() & 0o111 != 0
-        })
+        fs::metadata(&candidate)
+            .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
     })
 }
 
@@ -3283,17 +3286,26 @@ mod tests {
     }
 
     #[test]
-    fn full_command_templates_require_installed_commands() {
-        let commands = vec![crate::CommandEntry {
-            name: "sudo".to_owned(),
-            path: std::path::PathBuf::from("/usr/bin/sudo"),
-        }];
+    fn template_availability_follows_executable_symlinks_without_cached_index() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
 
-        let candidates = super::suggest(&commands, &UsageState::default(), "s", 1, 20);
+        let root = std::env::temp_dir().join(format!(
+            "termsense-template-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
 
-        assert!(!candidates
-            .iter()
-            .any(|candidate| candidate.source == "command-template"));
+        let executable = root.join("command-bin");
+        std::fs::write(&executable, "#!/bin/sh\n").unwrap();
+        let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&executable, permissions).unwrap();
+        symlink("command-bin", root.join("apt")).unwrap();
+
+        assert!(super::executable_on_path(root.as_os_str(), "apt"));
+        assert!(!super::executable_on_path(root.as_os_str(), "missing"));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
