@@ -153,6 +153,13 @@ awk -F '\t' 'NR == 1 && $1 == "sudo apt update" && $2 == "sudo apt update" { ok 
 grep -Fq "sudo apt upgrade" "$tmp/suggest-command-templates.txt" \
   || fail "typing s must include the full sudo apt upgrade command"
 
+./target/release/termsense suggest "su" --limit 20 > "$tmp/suggest-template-su.txt"
+awk -F '\t' 'NR == 1 && $1 == "sudo apt update" && $2 == "sudo apt update" { ok = 1 } END { exit !ok }' \
+  "$tmp/suggest-template-su.txt" \
+  || fail "typing su must prioritize full sudo apt update over the exact su executable"
+grep -Fq "sudo apt upgrade" "$tmp/suggest-template-su.txt" \
+  || fail "typing su must include full sudo apt upgrade"
+
 ./target/release/termsense suggest "sudo" --limit 20 > "$tmp/suggest-template-sudo.txt"
 awk -F '\t' 'NR == 1 && $2 == "sudo apt update" { ok = 1 } END { exit !ok }' \
   "$tmp/suggest-template-sudo.txt" \
