@@ -903,6 +903,19 @@ mod tests {
     }
 
     #[test]
+    fn and_and_operator_starts_new_context_with_or_without_space() {
+        for input in ["echo done &&", "echo done && ", "echo done && su"] {
+            let context = active_context(input, input.len());
+            assert!(!context.suppress_suggestions);
+            assert_eq!(context.tokens.len(), 1);
+            assert_eq!(
+                context.tokens[0].text,
+                if input.ends_with("su") { "su" } else { "" }
+            );
+        }
+    }
+
+    #[test]
     fn newline_starts_a_fresh_command_segment() {
         let input = "echo done\ngit che";
         let tokens = active_segment_tokens(input, input.len());
