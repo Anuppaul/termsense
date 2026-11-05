@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- suggest reusable full commands such as `sudo apt update` and `sudo apt upgrade` directly from the first `s`/`su`/`sudo` prefix when the required commands are installed;
 - keep the live suggestion overlay visible near the bottom of the terminal by reserving viewport rows before drawing;
 - prioritize `sudo apt update` / `apt update` in a fresh APT subcommand palette;
 - keep the APT palette available after a completed subcommand such as `sudo apt update ` by offering contextual options;
