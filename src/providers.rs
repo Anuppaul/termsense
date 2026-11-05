@@ -3191,7 +3191,7 @@ mod tests {
     }
 
     #[test]
-    fn templates_do_not_leak_into_unrelated_command_contexts() {
+    fn templates_only_match_the_active_command_segment() {
         let commands = vec![
             crate::CommandEntry {
                 name: "sudo".to_owned(),
@@ -3202,15 +3202,20 @@ mod tests {
                 path: std::path::PathBuf::from("/usr/bin/apt"),
             },
         ];
-        for typed in ["echo s", "sudo git s", "sudo apt update && s"] {
-            let candidates = super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
-            // The active command segment can legitimately begin with "s" after
-            // a separator, but the completed display must preserve that segment.
-            assert!(candidates.iter().all(|candidate| {
-                candidate.source != "command-template"
-                    || candidate.display_text.ends_with("sudo apt update")
-            }));
+
+        for typed in ["echo s", "sudo git s", "sudo apt search s"] {
+            let candidates =
+                super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
+            assert!(!candidates
+                .iter()
+                .any(|candidate| candidate.source == "command-template"));
         }
+
+        let typed = "echo hi && s";
+        let candidates = super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "echo hi && sudo apt update"));
     }
 
     #[test]
