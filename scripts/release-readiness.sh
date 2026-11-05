@@ -70,6 +70,8 @@ printf '==> source integrity\n'
   || fail "Bash adapter must contain exactly one _termsense_ctrl_space function"
 [[ "$(grep -c '^_termsense_draw_overlay() {' shell/termsense.bash)" -eq 1 ]] \
   || fail "Bash adapter must contain exactly one _termsense_draw_overlay function"
+[[ "$(grep -c '^_termsense_reserve_overlay_rows() {' shell/termsense.bash)" -eq 1 ]] \
+  || fail "Bash adapter must contain exactly one viewport reservation helper"
 grep -Fq 'bind -x '"'"'"\C-m":_termsense_accept_selected'"'" shell/termsense.bash \
   || fail "Enter must accept the selected suggestion while the menu is active"
 [[ "$(grep -c '^pub(crate) fn active_context' src/shell_parse.rs)" -eq 1 ]] \
@@ -132,6 +134,15 @@ grep -Fq "sudo git checkout" "$tmp/suggest-context.txt" \
 awk -F '\t' '$2 == "sudo git checkout" && $9 == "Switch branches or restore files" { found = 1 } END { exit !found }' \
   "$tmp/suggest-context.txt" \
   || fail "suggestion description protocol smoke failed"
+
+./target/release/termsense suggest "sudo apt " --limit 20 > "$tmp/suggest-sudo-apt.txt"
+awk -F '\t' 'NR == 1 && $2 == "sudo apt update" { found = 1 } END { exit !found }' \
+  "$tmp/suggest-sudo-apt.txt" \
+  || fail "sudo apt palette must prioritize apt update"
+
+./target/release/termsense suggest "sudo apt update " --limit 20 > "$tmp/suggest-sudo-apt-update.txt"
+grep -Fq "sudo apt update --quiet" "$tmp/suggest-sudo-apt-update.txt" \
+  || fail "sudo apt update palette should remain available for options"
 
 ./target/release/termsense suggest "git status && docker lo" --limit 20 > "$tmp/suggest-segment.txt"
 grep -Fq "git status && docker logs" "$tmp/suggest-segment.txt" \
