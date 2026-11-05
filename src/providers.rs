@@ -912,7 +912,7 @@ fn add_command_template_candidates(
 
         // If the user has typed exactly "sudo", the practical full commands
         // are intentionally more useful than the already-complete bare sudo.
-        let preference = if typed == "sudo" { 6_000 } else { 0 };
+        let preference = if matches!(typed, "sudo" | "sudo apt") { 6_000 } else { 0 };
 
         out.push(Candidate {
             insert_text: insert_text.to_owned(),
@@ -3171,8 +3171,7 @@ mod tests {
             ("sudo apt ", "update"),
             ("sudo apt u", "update"),
         ] {
-            let candidates =
-                super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
+            let candidates = super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
             let first = candidates.first().expect("command suggestions");
 
             assert_eq!(first.display_text, "sudo apt update", "prefix: {typed:?}");
@@ -3204,8 +3203,7 @@ mod tests {
             },
         ];
         for typed in ["echo s", "sudo git s", "sudo apt update && s"] {
-            let candidates =
-                super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
+            let candidates = super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
             // The active command segment can legitimately begin with "s" after
             // a separator, but the completed display must preserve that segment.
             assert!(candidates.iter().all(|candidate| {
