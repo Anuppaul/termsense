@@ -135,6 +135,12 @@ awk -F '\t' '$2 == "sudo git checkout" && $9 == "Switch branches or restore file
   "$tmp/suggest-context.txt" \
   || fail "suggestion description protocol smoke failed"
 
+./target/release/termsense suggest "s" --limit 20 > "$tmp/suggest-command-templates.txt"
+grep -Fq "sudo apt update" "$tmp/suggest-command-templates.txt" \
+  || fail "first-token prefix should include sudo apt update template"
+grep -Fq "sudo apt upgrade" "$tmp/suggest-command-templates.txt" \
+  || fail "first-token prefix should include sudo apt upgrade template"
+
 ./target/release/termsense suggest "sudo apt " --limit 20 > "$tmp/suggest-sudo-apt.txt"
 awk -F '\t' 'NR == 1 && $2 == "sudo apt update" { found = 1 } END { exit !found }' \
   "$tmp/suggest-sudo-apt.txt" \
