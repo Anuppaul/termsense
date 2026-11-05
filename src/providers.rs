@@ -965,8 +965,20 @@ fn add_command_template_candidates(
             0
         };
 
+        // "command&&s" and "command&&" need a space before the new
+        // command. With a spaced operator, preserve the user's existing text.
+        let insert_text = if first.start == current.start
+            && buffer
+                .get(..first.start)
+                .is_some_and(|prefix| prefix.ends_with("&&"))
+        {
+            format!(" {insert_text}")
+        } else {
+            insert_text.to_owned()
+        };
+
         out.push(Candidate {
-            insert_text: insert_text.to_owned(),
+            insert_text,
             display_text: (*template).to_owned(),
             description: candidate_description("command-template", "command-template", template)
                 .to_owned(),
@@ -3423,7 +3435,12 @@ mod tests {
             },
         ];
 
-        for input in ["echo done &&", "echo done && ", "echo done && s"] {
+        for input in [
+            "echo done &&",
+            "echo done && ",
+            "echo done &&s",
+            "echo done && s",
+        ] {
             let candidates =
                 super::suggest(&commands, &UsageState::default(), input, input.len(), 30);
             let update = candidates
@@ -3461,6 +3478,7 @@ mod tests {
         for input in [
             "sudo apt update &&",
             "sudo apt update && ",
+            "sudo apt update &&s",
             "sudo apt update && s",
             "sudo apt update && sudo a",
         ] {
