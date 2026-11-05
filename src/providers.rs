@@ -736,9 +736,10 @@ pub(crate) fn suggest(
         return finalize(candidates, usage, limit, buffer, cursor);
     }
 
-    // The active segment's entire typed prefix drives multi-word templates.
-    // Every candidate still replaces only the current Readline token.
+    // Multi-word templates work at the prompt and after conditional &&.
+    // Always replace the active token, never the preceding command chain.
     add_command_template_candidates(&mut candidates, commands, buffer, cursor, &tokens);
+    add_and_chain_candidates(&mut candidates, commands, buffer, cursor, &tokens);
 
     if tokens.first().is_some_and(|token| token.text == "sudo")
         && add_sudo_value_candidates(&mut candidates, &tokens)
@@ -866,6 +867,29 @@ fn add_command_candidates(out: &mut Vec<Candidate>, commands: &[CommandEntry], c
 
 }
 
+fn and_chain_previous_command(buffer: &str, segment_start: usize) -> Option<Vec<Token>> {
+    let preceding = buffer.get(..segment_start)?.trim_end();
+    let before_and = preceding.strip_suffix("&&")?.trim_end();
+    if before_and.is_empty() {
+        return None;
+    }
+
+    // Reuse the shell parser so quoted/escaped "&&" isn't treated as a
+    // conditional operator and the previous active command is isolated.
+    let previous = active_context(before_and, before_and.len());
+    if previous.suppress_suggestions || previous.redirection_target {
+        return None;
+    }
+    Some(previous.tokens)
+}
+
+fn is_apt_update_command(tokens: &[Token]) -> bool {
+    tokens.len() == 3
+        && tokens[0].text == "sudo"
+        && matches!(tokens[1].text.as_str(), "apt" | "apt-get")
+        && tokens[2].text == "update"
+}
+
 fn add_command_template_candidates(
     out: &mut Vec<Candidate>,
     commands: &[CommandEntry],
@@ -877,9 +901,10 @@ fn add_command_template_candidates(
         return;
     };
 
-    // Only unquoted, directly typed command prefixes participate. Do not
-    // interpolate templates into quoted arguments or unrelated shell syntax.
-    if !tokens.iter().all(|token| token.quote == crate::shell_parse::QuoteStyle::None) {
+    if !tokens
+        .iter()
+        .all(|token| token.quote == crate::shell_parse::QuoteStyle::None)
+    {
         return;
     }
 
@@ -890,9 +915,16 @@ fn add_command_template_candidates(
         return;
     };
 
-    if typed.is_empty() {
+    // Empty prefix stays quiet at the normal prompt. After "&&" the user
+    // has explicitly started another command, so suggest complete templates
+    // immediately, including before the first character is typed.
+    let previous = and_chain_previous_command(buffer, first.start);
+    if typed.is_empty() && previous.is_none() {
         return;
     }
+    let after_apt_update = previous
+        .as_deref()
+        .is_some_and(is_apt_update_command);
 
     let mut available = std::collections::BTreeMap::new();
     for (template, required_commands, boost) in COMMAND_TEMPLATES {
@@ -904,8 +936,11 @@ fn add_command_template_candidates(
             continue;
         }
 
-        // A template is a completion of the *entire* command line, not only
-        // of the current word. Example: "sudo a" -> "sudo apt update".
+        // Do not suggest refreshing the same indexes twice in succession.
+        if after_apt_update && *template == "sudo apt update" {
+            continue;
+        }
+
         let (Some(score), Some(insert_text)) = (
             score_prefix(template, typed),
             template.strip_prefix(unchanged_prefix),
@@ -913,11 +948,19 @@ fn add_command_template_candidates(
             continue;
         };
 
-        // Bare "su", "sudo", and "sudo apt" can win via the 10_000-point
-        // exact-match score. Keep full commands first at these boundaries,
-        // including after the largest possible 1_600-point usage boost.
+        // A bare "su" or "sudo" scores 10,000 as an exact executable match.
+        // The complete command must remain visible above that match.
         let preference = if matches!(typed, "su" | "sudo" | "sudo apt") {
             6_000
+        } else {
+            0
+        };
+        let chain_preference = if after_apt_update {
+            match *template {
+                "sudo apt upgrade" => 9_000,
+                "sudo apt full-upgrade" => 8_000,
+                _ => 0,
+            }
         } else {
             0
         };
@@ -929,12 +972,60 @@ fn add_command_template_candidates(
                 .to_owned(),
             kind: "command-template",
             source: "command-template",
-            // Adaptive usage boosts are capped at 1,600. The intent of a
-            // first-token command template must survive prior bare-command use.
-            score: score + boost + preference + 2_000,
+            score: score + boost + preference + chain_preference + 2_000,
             replacement_start: current.start,
             replacement_end: current.end,
             usage_key: usage_key_for("command-template", "command-template", template),
+        });
+    }
+}
+
+fn add_and_chain_candidates(
+    out: &mut Vec<Candidate>,
+    commands: &[CommandEntry],
+    buffer: &str,
+    cursor: usize,
+    tokens: &[Token],
+) {
+    if cursor != buffer.len() || !is_apt_update_command(tokens) {
+        return;
+    }
+
+    let (Some(first), Some(current)) = (tokens.first(), tokens.last()) else {
+        return;
+    };
+    if buffer.get(first.start..cursor) != Some("sudo apt update") {
+        return;
+    }
+    if !["sudo", "apt"]
+        .iter()
+        .all(|name| command_available_for_template(commands, name))
+    {
+        return;
+    }
+
+    for (next, boost, description) in [
+        (
+            "sudo apt upgrade",
+            1_200,
+            "Refresh package indexes, then upgrade only if refresh succeeds",
+        ),
+        (
+            "sudo apt full-upgrade",
+            1_100,
+            "Refresh package indexes, then perform a full upgrade on success",
+        ),
+    ] {
+        out.push(Candidate {
+            insert_text: format!("{} && {}", current.text, next),
+            display_text: String::new(),
+            description: description.to_owned(),
+            kind: "command-chain",
+            source: "command-chain",
+            score: 12_000 + boost,
+            replacement_start: current.start,
+            replacement_end: current.end,
+            usage_key: format!("command-chain:{next}"),
         });
     }
 }
