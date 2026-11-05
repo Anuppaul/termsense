@@ -701,6 +701,16 @@ const TERMSENSE_SUBCOMMANDS: &[&str] = &[
 
 const TERMSENSE_SUGGEST_OPTIONS: &[&str] = &["--cursor", "--json", "--limit", "-n"];
 
+const SUDO_APT_TEMPLATE_COMMANDS: &[&str] = &["sudo", "apt"];
+
+const COMMAND_TEMPLATES: &[(&str, &[&str], i64)] = &[
+    ("sudo apt update", SUDO_APT_TEMPLATE_COMMANDS, 900),
+    ("sudo apt upgrade", SUDO_APT_TEMPLATE_COMMANDS, 820),
+    ("sudo apt full-upgrade", SUDO_APT_TEMPLATE_COMMANDS, 760),
+    ("sudo apt autoremove", SUDO_APT_TEMPLATE_COMMANDS, 700),
+    ("sudo apt install", SUDO_APT_TEMPLATE_COMMANDS, 650),
+];
+
 pub(crate) fn suggest(
     commands: &[CommandEntry],
     usage: &UsageState,
@@ -847,6 +857,39 @@ fn add_command_candidates(out: &mut Vec<Candidate>, commands: &[CommandEntry], c
         "shell-function",
         20,
     );
+
+    add_command_template_candidates(out, commands, current);
+}
+
+fn add_command_template_candidates(
+    out: &mut Vec<Candidate>,
+    commands: &[CommandEntry],
+    current: &Token,
+) {
+    if current.text.is_empty() {
+        return;
+    }
+
+    for (template, required_commands, boost) in COMMAND_TEMPLATES {
+        if !required_commands
+            .iter()
+            .all(|required| commands.iter().any(|entry| entry.name == *required))
+        {
+            continue;
+        }
+
+        push_match(
+            out,
+            template,
+            template,
+            &current.text,
+            "command-template",
+            "command-template",
+            current.start,
+            current.end,
+            *boost,
+        );
+    }
 }
 
 fn add_shell_names(
@@ -2825,6 +2868,16 @@ fn candidate_description(source: &str, kind: &str, value: &str) -> &'static str 
             "-v" => "Show how the shell would resolve the command",
             _ => "Command lookup behavior",
         },
+        "command-template" => match value {
+            "sudo apt update" => "Refresh APT package index metadata",
+            "sudo apt upgrade" => "Upgrade installed packages with available updates",
+            "sudo apt full-upgrade" => {
+                "Upgrade packages even when dependency changes or removals are required"
+            }
+            "sudo apt autoremove" => "Remove dependency packages that are no longer needed",
+            "sudo apt install" => "Install one or more APT packages with administrator privileges",
+            _ => "Reusable command template",
+        },
         "termsense-schema" => match value {
             "doctor" => "Check whether TermSense can run correctly",
             "index" => "Refresh the local command index",
@@ -2877,6 +2930,7 @@ fn usage_key_for(source: &str, kind: &str, insert_text: &str) -> String {
         | "curl-schema"
         | "command-lookup-schema"
         | "man-cache"
+        | "command-template"
         | "termsense-schema" => format!("{source}:{kind}:{insert_text}"),
         _ => String::new(),
     }
@@ -3026,6 +3080,49 @@ mod tests {
         assert!(!candidates
             .iter()
             .any(|candidate| candidate.insert_text == "status"));
+    }
+
+    #[test]
+    fn first_token_prefix_includes_full_sudo_apt_templates() {
+        let commands = vec![
+            crate::CommandEntry {
+                name: "sudo".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/sudo"),
+            },
+            crate::CommandEntry {
+                name: "apt".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/apt"),
+            },
+        ];
+
+        let candidates = super::suggest(&commands, &UsageState::default(), "s", 1, 20);
+
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "sudo apt update"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "sudo apt upgrade"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "sudo apt full-upgrade"));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "sudo apt autoremove"));
+    }
+
+    #[test]
+    fn full_command_templates_require_installed_commands() {
+        let commands = vec![crate::CommandEntry {
+            name: "sudo".to_owned(),
+            path: std::path::PathBuf::from("/usr/bin/sudo"),
+        }];
+
+        let candidates = super::suggest(&commands, &UsageState::default(), "s", 1, 20);
+
+        assert!(!candidates
+            .iter()
+            .any(|candidate| candidate.source == "command-template"));
     }
 
     #[test]
