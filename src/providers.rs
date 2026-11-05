@@ -734,6 +734,11 @@ pub(crate) fn suggest(
         add_filesystem_candidates(&mut candidates, current, false);
         return finalize(candidates, usage, limit, buffer, cursor);
     }
+
+    // The active segment's entire typed prefix drives multi-word templates.
+    // Every candidate still replaces only the current Readline token.
+    add_command_template_candidates(&mut candidates, commands, buffer, cursor, &tokens);
+
     if tokens.first().is_some_and(|token| token.text == "sudo")
         && add_sudo_value_candidates(&mut candidates, &tokens)
     {
@@ -858,15 +863,33 @@ fn add_command_candidates(out: &mut Vec<Candidate>, commands: &[CommandEntry], c
         20,
     );
 
-    add_command_template_candidates(out, commands, current);
 }
 
 fn add_command_template_candidates(
     out: &mut Vec<Candidate>,
     commands: &[CommandEntry],
-    current: &Token,
+    buffer: &str,
+    cursor: usize,
+    tokens: &[Token],
 ) {
-    if current.text.is_empty() {
+    let (Some(first), Some(current)) = (tokens.first(), tokens.last()) else {
+        return;
+    };
+
+    // Only unquoted, directly typed command prefixes participate. Do not
+    // interpolate templates into quoted arguments or unrelated shell syntax.
+    if !tokens.iter().all(|token| token.quote == crate::shell_parse::QuoteStyle::None) {
+        return;
+    }
+
+    let (Some(typed), Some(unchanged_prefix)) = (
+        buffer.get(first.start..cursor),
+        buffer.get(first.start..current.start),
+    ) else {
+        return;
+    };
+
+    if typed.is_empty() {
         return;
     }
 
@@ -878,17 +901,31 @@ fn add_command_template_candidates(
             continue;
         }
 
-        push_match(
-            out,
-            template,
-            template,
-            &current.text,
-            "command-template",
-            "command-template",
-            current.start,
-            current.end,
-            *boost,
-        );
+        // A template is a completion of the *entire* command line, not only
+        // of the current word. Example: "sudo a" -> "sudo apt update".
+        let (Some(score), Some(insert_text)) = (
+            score_prefix(template, typed),
+            template.strip_prefix(unchanged_prefix),
+        ) else {
+            continue;
+        };
+
+        // If the user has typed exactly "sudo", the practical full commands
+        // are intentionally more useful than the already-complete bare sudo.
+        let preference = if typed == "sudo" { 6_000 } else { 0 };
+
+        out.push(Candidate {
+            insert_text: insert_text.to_owned(),
+            display_text: (*template).to_owned(),
+            description: candidate_description("command-template", "command-template", template)
+                .to_owned(),
+            kind: "command-template",
+            source: "command-template",
+            score: score + boost + preference,
+            replacement_start: current.start,
+            replacement_end: current.end,
+            usage_key: usage_key_for("command-template", "command-template", template),
+        });
     }
 }
 
@@ -3109,6 +3146,73 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "sudo apt autoremove"));
+    }
+
+    #[test]
+    fn sudo_apt_templates_follow_the_entire_typed_prefix() {
+        let commands = vec![
+            crate::CommandEntry {
+                name: "sudo".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/sudo"),
+            },
+            crate::CommandEntry {
+                name: "apt".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/apt"),
+            },
+        ];
+
+        for (typed, expected_insert) in [
+            ("s", "sudo apt update"),
+            ("su", "sudo apt update"),
+            ("sudo", "sudo apt update"),
+            ("sudo ", "apt update"),
+            ("sudo a", "apt update"),
+            ("sudo apt", "apt update"),
+            ("sudo apt ", "update"),
+            ("sudo apt u", "update"),
+        ] {
+            let candidates =
+                super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
+            let first = candidates.first().expect("command suggestions");
+
+            assert_eq!(first.display_text, "sudo apt update", "prefix: {typed:?}");
+            assert_eq!(first.insert_text, expected_insert, "prefix: {typed:?}");
+            assert_eq!(
+                super::completed_line(
+                    typed,
+                    typed.len(),
+                    first.replacement_start,
+                    first.replacement_end,
+                    &first.insert_text,
+                ),
+                "sudo apt update",
+                "prefix: {typed:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn templates_do_not_leak_into_unrelated_command_contexts() {
+        let commands = vec![
+            crate::CommandEntry {
+                name: "sudo".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/sudo"),
+            },
+            crate::CommandEntry {
+                name: "apt".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/apt"),
+            },
+        ];
+        for typed in ["echo s", "sudo git s", "sudo apt update && s"] {
+            let candidates =
+                super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
+            // The active command segment can legitimately begin with "s" after
+            // a separator, but the completed display must preserve that segment.
+            assert!(candidates.iter().all(|candidate| {
+                candidate.source != "command-template"
+                    || candidate.display_text.ends_with("sudo apt update")
+            }));
+        }
     }
 
     #[test]
