@@ -1277,6 +1277,31 @@ fn add_package_manager_candidates(
     }
 }
 
+fn add_apt_subcommand_candidates(out: &mut Vec<Candidate>, current: &Token) {
+    for subcommand in APT_SUBCOMMANDS {
+        let boost = match *subcommand {
+            "update" => 900,
+            "upgrade" => 820,
+            "install" => 780,
+            "search" => 700,
+            "show" => 680,
+            _ => 500,
+        };
+
+        push_match(
+            out,
+            subcommand,
+            subcommand,
+            &current.text,
+            "subcommand",
+            "apt-schema",
+            current.start,
+            current.end,
+            boost,
+        );
+    }
+}
+
 fn add_apt_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Token) {
     if current.text.starts_with('-') {
         add_static(out, APT_OPTIONS, current, "option", "apt-schema", 650);
@@ -1284,15 +1309,12 @@ fn add_apt_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Toke
     }
 
     if tokens.len() == 2 {
-        add_static(
-            out,
-            APT_SUBCOMMANDS,
-            current,
-            "subcommand",
-            "apt-schema",
-            500,
-        );
+        add_apt_subcommand_candidates(out, current);
         return;
+    }
+
+    if current.text.is_empty() {
+        add_static(out, APT_OPTIONS, current, "option", "apt-schema", 650);
     }
 
     if tokens.len() >= 3 && APT_PACKAGE_COMMANDS.contains(&tokens[1].text.as_str()) {
@@ -3137,6 +3159,30 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "apt install"));
+    }
+
+    #[test]
+    fn sudo_apt_palette_prioritizes_update() {
+        let input = "sudo apt ";
+        let candidates =
+            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+
+        assert_eq!(
+            candidates.first().map(|candidate| candidate.display_text.as_str()),
+            Some("sudo apt update")
+        );
+    }
+
+    #[test]
+    fn sudo_apt_update_keeps_palette_available_after_subcommand() {
+        let input = "sudo apt update ";
+        let candidates =
+            super::suggest(&[], &UsageState::default(), input, input.len(), 20);
+
+        assert!(!candidates.is_empty());
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "sudo apt update --quiet"));
     }
 
     #[test]
