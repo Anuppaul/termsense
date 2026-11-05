@@ -9,6 +9,7 @@ use std::{
     env, fs,
     hash::{Hash, Hasher},
     io::Read,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -893,11 +894,13 @@ fn add_command_template_candidates(
         return;
     }
 
+    let mut available = std::collections::BTreeMap::new();
     for (template, required_commands, boost) in COMMAND_TEMPLATES {
-        if !required_commands
-            .iter()
-            .all(|required| commands.iter().any(|entry| entry.name == *required))
-        {
+        if !required_commands.iter().all(|required| {
+            *available
+                .entry(*required)
+                .or_insert_with(|| command_available_for_template(commands, required))
+        }) {
             continue;
         }
 
@@ -929,6 +932,26 @@ fn add_command_template_candidates(
             usage_key: usage_key_for("command-template", "command-template", template),
         });
     }
+}
+
+// The PATH index can be stale or incomplete (for example when a command
+// is a symlink). Checking the executable path is a bounded local fallback.
+// Results are cached per suggestion query by add_command_template_candidates.
+fn command_available_for_template(commands: &[CommandEntry], name: &str) -> bool {
+    if commands.iter().any(|entry| entry.name == name) {
+        return true;
+    }
+
+    let Some(path_env) = env::var_os("PATH") else {
+        return false;
+    };
+
+    env::split_paths(&path_env).any(|dir| {
+        let candidate = dir.join(name);
+        fs::metadata(&candidate).is_ok_and(|meta| {
+            meta.is_file() && meta.permissions().mode() & 0o111 != 0
+        })
+    })
 }
 
 fn add_shell_names(
@@ -3247,6 +3270,16 @@ mod tests {
         assert!(candidates
             .iter()
             .any(|candidate| candidate.display_text == "echo hi && sudo apt update"));
+    }
+
+    #[test]
+    fn template_availability_accepts_indexed_executables() {
+        let commands = vec![crate::CommandEntry {
+            name: "sudo".to_owned(),
+            path: std::path::PathBuf::from("/usr/bin/sudo"),
+        }];
+
+        assert!(super::command_available_for_template(&commands, "sudo"));
     }
 
     #[test]
