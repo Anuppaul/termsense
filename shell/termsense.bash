@@ -68,6 +68,13 @@ __TERMSENSE_DISPLAYS=()
 __TERMSENSE_DESCRIPTIONS=()
 __TERMSENSE_USAGE_KEYS=()
 __TERMSENSE_PALETTE_ACTIVE=0
+__TERMSENSE_CURSOR_ROW=0
+__TERMSENSE_CURSOR_COL=0
+__TERMSENSE_CURSOR_POINT=0
+__TERMSENSE_TERM_LINES=0
+__TERMSENSE_TERM_COLUMNS=0
+__TERMSENSE_RESERVED_ROWS=0
+__TERMSENSE_LAYOUT_VISIBLE=0
 
 _termsense_binary() {
   if [[ -n "${TERMSENSE_BIN:-}" && -x "$TERMSENSE_BIN" ]]; then
@@ -124,6 +131,133 @@ _termsense_record_usage() {
   "$ts" record "$usage_key" >/dev/null 2>&1 || true
 }
 
+_termsense_refresh_terminal_dimensions() {
+  local previous_lines=${__TERMSENSE_TERM_LINES:-0}
+  local previous_columns=${__TERMSENSE_TERM_COLUMNS:-0}
+  local rows="${LINES:-0}"
+  local columns="${COLUMNS:-0}"
+  local size=""
+
+  [[ "$rows" =~ ^[0-9]+$ ]] || rows=0
+  [[ "$columns" =~ ^[0-9]+$ ]] || columns=0
+
+  if (( rows < 2 || columns < 20 )) && [[ -r /dev/tty ]] && command -v stty >/dev/null 2>&1; then
+    size="$(stty size < /dev/tty 2>/dev/null || true)"
+    if [[ "$size" =~ ^([0-9]+)[[:space:]]+([0-9]+)$ ]]; then
+      (( rows >= 2 )) || rows="${BASH_REMATCH[1]}"
+      (( columns >= 20 )) || columns="${BASH_REMATCH[2]}"
+    fi
+  fi
+
+  (( rows >= 2 )) || rows=24
+  (( columns >= 20 )) || columns=80
+
+  __TERMSENSE_TERM_LINES=$rows
+  __TERMSENSE_TERM_COLUMNS=$columns
+
+  if (( previous_lines > 0 )) \
+      && (( previous_lines != rows || previous_columns != columns )); then
+    __TERMSENSE_CURSOR_ROW=0
+    __TERMSENSE_CURSOR_COL=0
+    __TERMSENSE_CURSOR_POINT=$READLINE_POINT
+    __TERMSENSE_RESERVED_ROWS=0
+  fi
+}
+
+_termsense_probe_cursor() {
+  [[ -r /dev/tty && -w /dev/tty ]] || return 1
+
+  local response=""
+  printf '\033[6n' > /dev/tty
+  IFS= read -rsdR -t 0.05 response < /dev/tty || return 1
+  response="${response##*$'\033['}"
+
+  [[ "$response" =~ ^([0-9]+)\;([0-9]+)$ ]] || return 1
+
+  __TERMSENSE_CURSOR_ROW=${BASH_REMATCH[1]}
+  __TERMSENSE_CURSOR_COL=${BASH_REMATCH[2]}
+  __TERMSENSE_CURSOR_POINT=$READLINE_POINT
+  return 0
+}
+
+_termsense_update_cursor_cache() {
+  _termsense_refresh_terminal_dimensions
+
+  if (( __TERMSENSE_CURSOR_ROW <= 0 || __TERMSENSE_CURSOR_COL <= 0 )); then
+    _termsense_probe_cursor || return 1
+    return 0
+  fi
+
+  local delta=$((READLINE_POINT - __TERMSENSE_CURSOR_POINT))
+  local linear=$((__TERMSENSE_CURSOR_COL - 1 + delta))
+  local row=$__TERMSENSE_CURSOR_ROW
+  local columns=$__TERMSENSE_TERM_COLUMNS
+
+  while (( linear < 0 )); do
+    linear=$((linear + columns))
+    row=$((row - 1))
+  done
+  while (( linear >= columns )); do
+    linear=$((linear - columns))
+    row=$((row + 1))
+  done
+
+  (( row < 1 )) && row=1
+  (( row > __TERMSENSE_TERM_LINES )) && row=$__TERMSENSE_TERM_LINES
+
+  __TERMSENSE_CURSOR_ROW=$row
+  __TERMSENSE_CURSOR_COL=$((linear + 1))
+  __TERMSENSE_CURSOR_POINT=$READLINE_POINT
+  return 0
+}
+
+_termsense_reserve_overlay_rows() {
+  local requested="$1"
+  _termsense_refresh_terminal_dimensions
+
+  local maximum=$((__TERMSENSE_TERM_LINES - 1))
+  (( maximum < 1 )) && maximum=1
+  (( requested > maximum )) && requested=$maximum
+  (( requested < 1 )) && requested=1
+  __TERMSENSE_LAYOUT_VISIBLE=$requested
+
+  if _termsense_update_cursor_cache; then
+    local available=$((__TERMSENSE_TERM_LINES - __TERMSENSE_CURSOR_ROW))
+    local deficit=$((requested - available))
+
+    if (( deficit > 0 )); then
+      local i
+      printf '\0337' >&2
+      for ((i=0; i<requested; i++)); do
+        printf '\r\n' >&2
+      done
+      printf '\0338\033[%dA' "$deficit" >&2
+
+      __TERMSENSE_CURSOR_ROW=$((__TERMSENSE_CURSOR_ROW - deficit))
+      (( __TERMSENSE_CURSOR_ROW < 1 )) && __TERMSENSE_CURSOR_ROW=1
+      __TERMSENSE_CURSOR_POINT=$READLINE_POINT
+    fi
+
+    (( __TERMSENSE_RESERVED_ROWS < requested )) && __TERMSENSE_RESERVED_ROWS=$requested
+    return 0
+  fi
+
+  if (( __TERMSENSE_RESERVED_ROWS < requested )); then
+    local deficit=$((requested - __TERMSENSE_RESERVED_ROWS))
+    printf '\033[%dS\033[%dA' "$deficit" "$deficit" >&2
+    __TERMSENSE_RESERVED_ROWS=$requested
+  fi
+}
+
+_termsense_reset_viewport_state() {
+  __TERMSENSE_CURSOR_ROW=0
+  __TERMSENSE_CURSOR_COL=0
+  __TERMSENSE_CURSOR_POINT=0
+  __TERMSENSE_TERM_LINES=0
+  __TERMSENSE_TERM_COLUMNS=0
+  __TERMSENSE_RESERVED_ROWS=0
+  __TERMSENSE_LAYOUT_VISIBLE=0
+}
 _termsense_clear_overlay() {
   local old_visible=${__TERMSENSE_VISIBLE:-0}
   local old_ghost=${__TERMSENSE_GHOST_LEN:-0}
@@ -272,7 +406,11 @@ _termsense_draw_overlay() {
   (( max < 1 )) && max=1
   (( max > total )) && max=$total
 
-  local columns=${COLUMNS:-80}
+  _termsense_reserve_overlay_rows "$max"
+  max=$__TERMSENSE_LAYOUT_VISIBLE
+  (( max > total )) && max=$total
+
+  local columns=$__TERMSENSE_TERM_COLUMNS
   (( columns < 20 )) && columns=20
   local width=$((columns - 6))
 
@@ -414,6 +552,7 @@ _termsense_prompt_cleanup() {
   _termsense_clear_overlay
   _termsense_reset_state
   _termsense_restore_navigation
+  _termsense_reset_viewport_state
   _termsense_refresh_shell_context
 }
 
