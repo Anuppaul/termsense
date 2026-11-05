@@ -3411,6 +3411,145 @@ mod tests {
     }
 
     #[test]
+    fn and_chain_shows_full_commands_before_typing_next_word() {
+        let commands = vec![
+            crate::CommandEntry {
+                name: "sudo".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/sudo"),
+            },
+            crate::CommandEntry {
+                name: "apt".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/apt"),
+            },
+        ];
+
+        for input in ["echo done &&", "echo done && ", "echo done && s"] {
+            let candidates =
+                super::suggest(&commands, &UsageState::default(), input, input.len(), 30);
+            let update = candidates
+                .iter()
+                .find(|candidate| candidate.display_text == "echo done && sudo apt update")
+                .expect("full template after &&");
+            let selected_line = super::completed_line(
+                input,
+                input.len(),
+                update.replacement_start,
+                update.replacement_end,
+                &update.insert_text,
+            );
+            assert_eq!(
+                selected_line,
+                "echo done && sudo apt update",
+                "typed: {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn after_apt_update_prefers_upgrade_and_preserves_the_first_command() {
+        let commands = vec![
+            crate::CommandEntry {
+                name: "sudo".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/sudo"),
+            },
+            crate::CommandEntry {
+                name: "apt".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/apt"),
+            },
+        ];
+
+        for input in [
+            "sudo apt update &&",
+            "sudo apt update && ",
+            "sudo apt update && s",
+            "sudo apt update && sudo a",
+        ] {
+            let candidates =
+                super::suggest(&commands, &UsageState::default(), input, input.len(), 30);
+            let first = candidates.first().expect("upgrade after &&");
+            assert_eq!(
+                first.display_text,
+                "sudo apt update && sudo apt upgrade",
+                "typed: {input:?}"
+            );
+            assert_eq!(
+                super::completed_line(
+                    input,
+                    input.len(),
+                    first.replacement_start,
+                    first.replacement_end,
+                    &first.insert_text
+                ),
+                "sudo apt update && sudo apt upgrade",
+                "typed: {input:?}"
+            );
+            assert!(!candidates
+                .iter()
+                .any(|candidate| candidate.display_text == "sudo apt update && sudo apt update"));
+        }
+    }
+
+    #[test]
+    fn complete_apt_update_offers_safe_conditional_chain_text() {
+        let commands = vec![
+            crate::CommandEntry {
+                name: "sudo".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/sudo"),
+            },
+            crate::CommandEntry {
+                name: "apt".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/apt"),
+            },
+        ];
+
+        let typed = "sudo apt update";
+        let candidates = super::suggest(&commands, &UsageState::default(), typed, typed.len(), 30);
+        let chain = candidates
+            .iter()
+            .find(|candidate| candidate.display_text == "sudo apt update && sudo apt upgrade")
+            .expect("conditional chain suggestion");
+
+        assert_eq!(
+            super::completed_line(
+                typed,
+                typed.len(),
+                chain.replacement_start,
+                chain.replacement_end,
+                &chain.insert_text
+            ),
+            "sudo apt update && sudo apt upgrade"
+        );
+        assert!(chain.description.contains("only if refresh succeeds"));
+    }
+
+    #[test]
+    fn literal_and_operators_do_not_trigger_chain_templates() {
+        let commands = vec![
+            crate::CommandEntry {
+                name: "sudo".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/sudo"),
+            },
+            crate::CommandEntry {
+                name: "apt".to_owned(),
+                path: std::path::PathBuf::from("/usr/bin/apt"),
+            },
+        ];
+        for input in [
+            "echo '&&' ",
+            "echo \"&&\" ",
+            "echo \\&\\& ",
+            "echo done || ",
+            "echo done ; ",
+        ] {
+            let candidates =
+                super::suggest(&commands, &UsageState::default(), input, input.len(), 30);
+            assert!(!candidates
+                .iter()
+                .any(|candidate| candidate.source == "command-template"));
+        }
+    }
+
+    #[test]
     fn template_availability_accepts_indexed_executables() {
         let commands = vec![crate::CommandEntry {
             name: "sudo".to_owned(),
