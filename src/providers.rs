@@ -1882,10 +1882,13 @@ fn add_path_assignment_candidates(out: &mut Vec<Candidate>, current: &Token, opt
 
     for candidate in path_candidates {
         let insert = format!("{option}{}", candidate.insert_text);
+        let logical = format!("{option}{}", candidate.display_text);
+        // Match the unescaped user token, but insert a shell-escaped path.
+        // Matching the escaped representation loses paths with spaces.
         push_match(
             out,
             &insert,
-            &insert,
+            &logical,
             &current.text,
             candidate.kind,
             "filesystem",
