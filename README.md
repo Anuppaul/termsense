@@ -80,7 +80,7 @@ Starter work:
 - current-repository Git ref suggestions for commands such as `git checkout`;
 - systemctl subcommand suggestions and local systemd unit discovery;
 - Docker subcommand suggestions and actual local container-name discovery;
-- real filesystem directory completion for `cd`, including `~/...` paths;
+- filesystem directory completion for `cd`, `ls`, `git add`, editors, scripts, and path-shaped arguments to other commands; supports `~/`, `./`, `../`, absolute paths, quoted paths and safe filenames with spaces;
 - bounded local subprocesses for Git/Docker providers so provider failures do not hang the shell;
 - full-command suggestion display while retaining token-safe replacement;
 - generic Cargo subcommand intelligence;
