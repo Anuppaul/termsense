@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- restore native filesystem/folder suggestions for path-shaped command names and arguments (including `./`, `../`, `~/`, absolute paths, `git add`, editors, scripts, `sudo`, and chained commands); preserve empty dynamic usage keys correctly in the Bash suggestion protocol;
 - add conditional `&&` full-command completion immediately after the operator (with or without a space), and suggest `sudo apt update && sudo apt upgrade` as a safe text-only continuation;
 - prioritize full `sudo apt ...` templates over the exact `su` command when typing `su`, with regression coverage for the selected insertion range;
 - fix PATH indexing of executable symlinks (including `sudo`/`apt`), invalidate stale command indexes, and fall back to local PATH resolution for full-command templates;
