@@ -203,6 +203,28 @@ awk -F '\t' 'NR == 1 && $1 == "sudo apt upgrade" && $2 == "sudo apt update && su
 grep -Fq "sudo apt update && sudo apt upgrade" "$tmp/suggest-and-chain.txt" \
   || fail "completed apt update must offer an && upgrade command chain"
 
+printf '==> filesystem completion regression\n'
+mkdir -p "$tmp/path-fixture/Documents Folder"
+printf 'fixture\n' > "$tmp/path-fixture/Documents.txt"
+
+for prefix in "cd" "ls" "sudo ls" "git add" "code" "echo done && ls"; do
+  input="$prefix $tmp/path-fixture/Doc"
+  ./target/release/termsense suggest "$input" --limit 20 > "$tmp/path-suggest.txt"
+  grep -Fq "$prefix $tmp/path-fixture/Documents\\ Folder/" "$tmp/path-suggest.txt" \
+    || fail "missing directory completion for: $prefix"
+  awk -F '\t' '$3 == "directory" && $4 == "filesystem" && $8 == "" && $9 == "Filesystem directory" { found = 1 } END { exit !found }' \
+    "$tmp/path-suggest.txt" \
+    || fail "filesystem candidate must have an empty usage key and correct description"
+done
+
+./target/release/termsense suggest "$tmp/path-fixture/Doc" --limit 20 > "$tmp/path-first-word.txt"
+grep -Fq "$tmp/path-fixture/Documents\\ Folder/" "$tmp/path-first-word.txt" \
+  || fail "filesystem paths must be suggested in command position"
+
+./target/release/termsense suggest "cd ~" --limit 20 > "$tmp/path-home.txt"
+grep -Fq 'cd ~/' "$tmp/path-home.txt" \
+  || fail "home-directory shortcut must complete to ~/"
+
 ./target/release/termsense suggest "git status && docker lo" --limit 20 > "$tmp/suggest-segment.txt"
 grep -Fq "git status && docker logs" "$tmp/suggest-segment.txt" \
   || fail "active command segment smoke failed"
