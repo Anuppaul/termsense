@@ -517,10 +517,8 @@ mod tests {
     fn path_discovery_includes_executable_symlinks_but_not_broken_links() {
         use std::os::unix::fs::symlink;
 
-        let root = std::env::temp_dir().join(format!(
-            "termsense-symlink-test-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("termsense-symlink-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
 
