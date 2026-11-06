@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- keep `cd` completion directory-only when generic path fallback is enabled, and enforce it alongside `ls` file completion in regression tests;
 - restore native filesystem/folder suggestions for path-shaped command names and arguments (including `./`, `../`, `~/`, absolute paths, `git add`, editors, scripts, `sudo`, and chained commands); preserve empty dynamic usage keys correctly in the Bash suggestion protocol;
 - add conditional `&&` full-command completion immediately after the operator (with or without a space), and suggest `sudo apt update && sudo apt upgrade` as a safe text-only continuation;
 - prioritize full `sudo apt ...` templates over the exact `su` command when typing `su`, with regression coverage for the selected insertion range;
