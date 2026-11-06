@@ -3356,6 +3356,32 @@ mod tests {
             );
         }
 
+        let typed_quoted = format!("cd \"{}/Doc", root.display());
+        let quoted_candidates = super::suggest(
+            &[],
+            &UsageState::default(),
+            &typed_quoted,
+            typed_quoted.len(),
+            30,
+        );
+        let expected_quoted = format!("cd \"{}/Documents Folder/", root.display());
+        assert!(quoted_candidates
+            .iter()
+            .any(|candidate| candidate.display_text == expected_quoted));
+
+        std::fs::create_dir_all(root.join(".hidden-dir")).unwrap();
+        let typed_hidden = format!("cd {}/.hi", root.display());
+        let hidden_candidates = super::suggest(
+            &[],
+            &UsageState::default(),
+            &typed_hidden,
+            typed_hidden.len(),
+            30,
+        );
+        assert!(hidden_candidates
+            .iter()
+            .any(|candidate| candidate.display_text.ends_with("/.hidden-dir/")));
+
         let typed = format!("cd {}/Doc", root.display());
         let suggestions = super::suggest(&[], &UsageState::default(), &typed, typed.len(), 30);
         assert!(!suggestions
