@@ -3398,13 +3398,8 @@ mod tests {
 
         // The generic filesystem fallback must still suggest files for ls.
         let typed_ls = format!("ls {}/Doc", root.display());
-        let ls_candidates = super::suggest(
-            &[],
-            &UsageState::default(),
-            &typed_ls,
-            typed_ls.len(),
-            30,
-        );
+        let ls_candidates =
+            super::suggest(&[], &UsageState::default(), &typed_ls, typed_ls.len(), 30);
         assert!(ls_candidates
             .iter()
             .any(|candidate| candidate.display_text.ends_with("Documents.txt")));
