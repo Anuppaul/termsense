@@ -819,7 +819,7 @@ pub(crate) fn suggest(
     // tools, etc.). A path-shaped argument should reach the filesystem
     // provider even when the command has no dedicated schema.
     // Never override options, SSH hosts, package names, or other bare values.
-    if looks_like_filesystem_path(&current.text) {
+    if command != "cd" && looks_like_filesystem_path(&current.text) {
         add_filesystem_candidates(&mut candidates, current, false);
     } else if matches!(
         command,
@@ -883,7 +883,6 @@ fn add_command_candidates(out: &mut Vec<Candidate>, commands: &[CommandEntry], c
         "shell-function",
         20,
     );
-
 }
 
 fn and_chain_previous_command(buffer: &str, segment_start: usize) -> Option<Vec<Token>> {
@@ -941,9 +940,7 @@ fn add_command_template_candidates(
     if typed.is_empty() && previous.is_none() {
         return;
     }
-    let after_apt_update = previous
-        .as_deref()
-        .is_some_and(is_apt_update_command);
+    let after_apt_update = previous.as_deref().is_some_and(is_apt_update_command);
 
     let mut available = std::collections::BTreeMap::new();
     for (template, required_commands, boost) in COMMAND_TEMPLATES {
@@ -2020,16 +2017,15 @@ fn add_filesystem_candidates(out: &mut Vec<Candidate>, current: &Token, director
         _ => None,
     };
     if let Some(path) = shortcut {
-        let insertion_path = if path == "~/"
-            && current.quote != crate::shell_parse::QuoteStyle::None
-        {
-            let Some(home) = env::var_os("HOME") else {
-                return;
+        let insertion_path =
+            if path == "~/" && current.quote != crate::shell_parse::QuoteStyle::None {
+                let Some(home) = env::var_os("HOME") else {
+                    return;
+                };
+                format!("{}/", PathBuf::from(home).display())
+            } else {
+                path.to_owned()
             };
-            format!("{}/", PathBuf::from(home).display())
-        } else {
-            path.to_owned()
-        };
         if let Some(insert) = quote_candidate(&insertion_path, current.quote) {
             push_match(
                 out,
@@ -2075,16 +2071,15 @@ fn add_filesystem_candidates(out: &mut Vec<Candidate>, current: &Token, director
         let logical = format!("{typed_parent}{name}{suffix}");
         // Tilde expansion is disabled inside shell quotes. Use the absolute
         // home directory so completion remains executable after acceptance.
-        let insertion_path = if current.quote != crate::shell_parse::QuoteStyle::None
-            && logical.starts_with("~/")
-        {
-            let Some(home) = env::var_os("HOME") else {
-                continue;
+        let insertion_path =
+            if current.quote != crate::shell_parse::QuoteStyle::None && logical.starts_with("~/") {
+                let Some(home) = env::var_os("HOME") else {
+                    continue;
+                };
+                format!("{}{}", PathBuf::from(home).display(), &logical[1..])
+            } else {
+                logical.clone()
             };
-            format!("{}{}", PathBuf::from(home).display(), &logical[1..])
-        } else {
-            logical.clone()
-        };
         let Some(insert) = quote_candidate(&insertion_path, current.quote) else {
             continue;
         };
@@ -3316,10 +3311,8 @@ mod tests {
 
     #[test]
     fn filesystem_path_arguments_work_across_common_commands() {
-        let root = std::env::temp_dir().join(format!(
-            "termsense-path-suggestions-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("termsense-path-suggestions-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let folder = root.join("Documents Folder");
         std::fs::create_dir_all(&folder).unwrap();
@@ -3336,8 +3329,7 @@ mod tests {
             "",
         ] {
             let typed = format!("{prefix}{}/Doc", root.display());
-            let candidates =
-                super::suggest(&[], &UsageState::default(), &typed, typed.len(), 30);
+            let candidates = super::suggest(&[], &UsageState::default(), &typed, typed.len(), 30);
             let expected = format!("{prefix}{}/Documents\\ Folder/", root.display());
 
             let folder_candidate = candidates
@@ -3362,8 +3354,7 @@ mod tests {
 
         for prefix in ["curl --output=", "tar --file="] {
             let typed = format!("{prefix}{}/Doc", root.display());
-            let candidates =
-                super::suggest(&[], &UsageState::default(), &typed, typed.len(), 30);
+            let candidates = super::suggest(&[], &UsageState::default(), &typed, typed.len(), 30);
             let expected = format!("{prefix}{}/Documents\\ Folder/", root.display());
             assert!(
                 candidates
@@ -3405,18 +3396,26 @@ mod tests {
             .iter()
             .any(|candidate| candidate.display_text.ends_with("Documents.txt")));
 
+        // The generic filesystem fallback must still suggest files for ls.
+        let typed_ls = format!("ls {}/Doc", root.display());
+        let ls_candidates = super::suggest(
+            &[],
+            &UsageState::default(),
+            &typed_ls,
+            typed_ls.len(),
+            30,
+        );
+        assert!(ls_candidates
+            .iter()
+            .any(|candidate| candidate.display_text.ends_with("Documents.txt")));
+
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn path_roots_are_suggested_before_a_slash_is_typed() {
-        for (typed, expected) in [
-            ("cd ~", "cd ~/"),
-            ("cd .", "cd ./"),
-            ("cd ..", "cd ../"),
-        ] {
-            let candidates =
-                super::suggest(&[], &UsageState::default(), typed, typed.len(), 30);
+        for (typed, expected) in [("cd ~", "cd ~/"), ("cd .", "cd ./"), ("cd ..", "cd ../")] {
+            let candidates = super::suggest(&[], &UsageState::default(), typed, typed.len(), 30);
             assert!(candidates
                 .iter()
                 .any(|candidate| candidate.display_text == expected));
@@ -3496,7 +3495,9 @@ mod tests {
 
         let candidates = super::suggest(&commands, &UsageState::default(), "su", 2, 20);
         assert_eq!(
-            candidates.first().map(|candidate| candidate.display_text.as_str()),
+            candidates
+                .first()
+                .map(|candidate| candidate.display_text.as_str()),
             Some("sudo apt update")
         );
         let update = candidates
@@ -3511,9 +3512,9 @@ mod tests {
         assert_eq!(update.insert_text, "sudo apt update");
         assert_eq!(update.replacement_start, 0);
         assert_eq!(update.replacement_end, 2);
-        assert!(
-            candidates.iter().any(|candidate| candidate.display_text == "sudo apt upgrade")
-        );
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.display_text == "sudo apt upgrade"));
     }
 
     #[test]
@@ -3648,8 +3649,7 @@ mod tests {
                 &update.insert_text,
             );
             assert_eq!(
-                selected_line,
-                "echo done && sudo apt update",
+                selected_line, "echo done && sudo apt update",
                 "typed: {input:?}"
             );
         }
@@ -3679,8 +3679,7 @@ mod tests {
                 super::suggest(&commands, &UsageState::default(), input, input.len(), 30);
             let first = candidates.first().expect("upgrade after &&");
             assert_eq!(
-                first.display_text,
-                "sudo apt update && sudo apt upgrade",
+                first.display_text, "sudo apt update && sudo apt upgrade",
                 "typed: {input:?}"
             );
             assert_eq!(
@@ -3774,10 +3773,8 @@ mod tests {
     fn template_availability_follows_executable_symlinks_without_cached_index() {
         use std::os::unix::fs::{symlink, PermissionsExt};
 
-        let root = std::env::temp_dir().join(format!(
-            "termsense-template-test-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("termsense-template-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
 
@@ -3932,7 +3929,9 @@ mod tests {
         let candidates = super::suggest(&[], &UsageState::default(), input, input.len(), 20);
 
         assert_eq!(
-            candidates.first().map(|candidate| candidate.display_text.as_str()),
+            candidates
+                .first()
+                .map(|candidate| candidate.display_text.as_str()),
             Some("sudo apt update")
         );
     }
