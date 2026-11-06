@@ -2017,8 +2017,17 @@ fn add_filesystem_candidates(out: &mut Vec<Candidate>, current: &Token, director
         _ => None,
     };
     if let Some(path) = shortcut {
-        let insert = quote_candidate(path, current.quote);
-        if let Some(insert) = insert {
+        let insertion_path = if path == "~/"
+            && current.quote != crate::shell_parse::QuoteStyle::None
+        {
+            let Some(home) = env::var_os("HOME") else {
+                return;
+            };
+            format!("{}/", PathBuf::from(home).display())
+        } else {
+            path.to_owned()
+        };
+        if let Some(insert) = quote_candidate(&insertion_path, current.quote) {
             push_match(
                 out,
                 &insert,
