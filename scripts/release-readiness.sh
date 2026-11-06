@@ -217,6 +217,13 @@ for prefix in "cd" "ls" "sudo ls" "git add" "code" "echo done && ls"; do
     || fail "filesystem candidate must have an empty usage key and correct description"
 done
 
+for command in "curl --output=" "tar --file="; do
+  input="$command$tmp/path-fixture/Doc"
+  ./target/release/termsense suggest "$input" --limit 20 > "$tmp/path-assignment.txt"
+  grep -Fq "$command$tmp/path-fixture/Documents\\ Folder/" "$tmp/path-assignment.txt" \
+    || fail "missing option-assigned directory completion for: $command"
+done
+
 ./target/release/termsense suggest "$tmp/path-fixture/Doc" --limit 20 > "$tmp/path-first-word.txt"
 grep -Fq "$tmp/path-fixture/Documents\\ Folder/" "$tmp/path-first-word.txt" \
   || fail "filesystem paths must be suggested in command position"
