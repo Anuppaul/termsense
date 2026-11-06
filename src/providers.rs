@@ -752,7 +752,11 @@ pub(crate) fn suggest(
 
     if effective.is_empty() || effective.len() <= 1 {
         let current = effective.last().or_else(|| tokens.last()).expect("token");
-        add_command_candidates(&mut candidates, commands, current);
+        if looks_like_filesystem_path(&current.text) {
+            add_filesystem_candidates(&mut candidates, current, false);
+        } else {
+            add_command_candidates(&mut candidates, commands, current);
+        }
         return finalize(candidates, usage, limit, buffer, cursor);
     }
 
@@ -809,6 +813,21 @@ pub(crate) fn suggest(
             add_filesystem_candidates(&mut candidates, current, false)
         }
         _ => {}
+    }
+
+    // Local paths can be passed to any command (editors, scripts, project
+    // tools, etc.). A path-shaped argument should reach the filesystem
+    // provider even when the command has no dedicated schema.
+    // Never override options, SSH hosts, package names, or other bare values.
+    if looks_like_filesystem_path(&current.text) {
+        add_filesystem_candidates(&mut candidates, current, false);
+    } else if matches!(
+        command,
+        "code" | "codium" | "python" | "python3" | "bash" | "sh" | "source" | "."
+    ) && current.text != command
+        && !current.text.starts_with('-')
+    {
+        add_filesystem_candidates(&mut candidates, current, false);
     }
 
     if candidates.is_empty() && current.text.starts_with('-') {
@@ -1307,6 +1326,11 @@ fn add_git_candidates(out: &mut Vec<Candidate>, tokens: &[Token], current: &Toke
             _ => "git-schema",
         };
         add_static(out, options, current, "option", source, 650);
+        return;
+    }
+
+    if matches!(subcommand, "add" | "rm" | "mv") && tokens.len() >= 3 {
+        add_filesystem_candidates(out, current, false);
         return;
     }
 
@@ -1963,6 +1987,20 @@ fn find_upwards(name: &str) -> Option<PathBuf> {
     }
 
     None
+}
+
+fn looks_like_filesystem_path(value: &str) -> bool {
+    value.starts_with('/')
+        || value.starts_with("./")
+        || value.starts_with("../")
+        || value == "."
+        || value == ".."
+        || value == "~"
+        || value.starts_with("~/")
+        || value.starts_with("$HOME/")
+        || value.starts_with("${HOME}/")
+        || value.starts_with("$PWD/")
+        || value.starts_with("${PWD}/")
 }
 
 fn add_directory_candidates(out: &mut Vec<Candidate>, current: &Token) {
