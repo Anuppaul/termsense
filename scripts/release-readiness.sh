@@ -225,6 +225,24 @@ grep -Fq "$tmp/path-fixture/Documents\\ Folder/" "$tmp/path-first-word.txt" \
 grep -Fq 'cd ~/' "$tmp/path-home.txt" \
   || fail "home-directory shortcut must complete to ~/"
 
+# Exercise the actual Bash adapter parser with a candidate whose usage key
+# is deliberately empty. Bash IFS=$'\\t' would collapse that TSV column.
+printf '==> Bash filesystem query protocol\n'
+if ! TERMSENSE_BIN="$repo_root/target/release/termsense" \
+     TERMSENSE_QUERY_TEST="cd $tmp/path-fixture/Doc" \
+     bash --noprofile --norc -ic '
+       source shell/termsense.bash
+       READLINE_LINE="$TERMSENSE_QUERY_TEST"
+       READLINE_POINT=${#READLINE_LINE}
+       _termsense_query 20 || exit 1
+       [[ "${#__TERMSENSE_CANDIDATES[@]}" -gt 0 ]] || exit 2
+       [[ "${__TERMSENSE_DESCRIPTIONS[0]}" == "Filesystem directory" ]] || exit 3
+       [[ -z "${__TERMSENSE_USAGE_KEYS[0]}" ]] || exit 4
+     ' >/dev/null 2>"$tmp/bash-query-errors.txt"; then
+  cat "$tmp/bash-query-errors.txt" >&2
+  fail "Bash must preserve an empty dynamic usage key and filesystem description"
+fi
+
 ./target/release/termsense suggest "git status && docker lo" --limit 20 > "$tmp/suggest-segment.txt"
 grep -Fq "git status && docker logs" "$tmp/suggest-segment.txt" \
   || fail "active command segment smoke failed"
