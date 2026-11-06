@@ -3339,8 +3339,9 @@ mod tests {
 
             let folder_candidate = candidates
                 .iter()
-                .find(|candidate| candidate.kind == "directory"
-                    && candidate.display_text == expected)
+                .find(|candidate| {
+                    candidate.kind == "directory" && candidate.display_text == expected
+                })
                 .unwrap_or_else(|| panic!("missing directory suggestion for {typed:?}"));
 
             assert!(folder_candidate.usage_key.is_empty());
