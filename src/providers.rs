@@ -1997,10 +1997,6 @@ fn looks_like_filesystem_path(value: &str) -> bool {
         || value == ".."
         || value == "~"
         || value.starts_with("~/")
-        || value.starts_with("$HOME/")
-        || value.starts_with("${HOME}/")
-        || value.starts_with("$PWD/")
-        || value.starts_with("${PWD}/")
 }
 
 fn add_directory_candidates(out: &mut Vec<Candidate>, current: &Token) {
@@ -2009,6 +2005,32 @@ fn add_directory_candidates(out: &mut Vec<Candidate>, current: &Token) {
 
 fn add_filesystem_candidates(out: &mut Vec<Candidate>, current: &Token, directories_only: bool) {
     if current.text.starts_with('-') {
+        return;
+    }
+
+    // Complete common path roots before the user types a slash. Without
+    // this, "cd ~" searches the current directory for literal "~" names.
+    let shortcut = match current.text.as_str() {
+        "~" => Some("~/"),
+        "." => Some("./"),
+        ".." => Some("../"),
+        _ => None,
+    };
+    if let Some(path) = shortcut {
+        let insert = quote_candidate(path, current.quote);
+        if let Some(insert) = insert {
+            push_match(
+                out,
+                &insert,
+                path,
+                &current.text,
+                "directory",
+                "filesystem",
+                current.start,
+                current.end,
+                900,
+            );
+        }
         return;
     }
 
@@ -2039,7 +2061,19 @@ fn add_filesystem_candidates(out: &mut Vec<Candidate>, current: &Token, director
 
         let suffix = if is_dir { "/" } else { "" };
         let logical = format!("{typed_parent}{name}{suffix}");
-        let Some(insert) = quote_candidate(&logical, current.quote) else {
+        // Tilde expansion is disabled inside shell quotes. Use the absolute
+        // home directory so completion remains executable after acceptance.
+        let insertion_path = if current.quote != crate::shell_parse::QuoteStyle::None
+            && logical.starts_with("~/")
+        {
+            let Some(home) = env::var_os("HOME") else {
+                continue;
+            };
+            format!("{}{}", PathBuf::from(home).display(), &logical[1..])
+        } else {
+            logical.clone()
+        };
+        let Some(insert) = quote_candidate(&insertion_path, current.quote) else {
             continue;
         };
         let kind = if is_dir { "directory" } else { "file" };
