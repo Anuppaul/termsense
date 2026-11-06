@@ -359,9 +359,14 @@ _termsense_query() {
   byte_point="$(_termsense_byte_point)"
 
   local value display _kind _source _score start end usage_key description first=1
-  local tab
-  printf -v tab '\t'
-  while IFS="$tab" read -r value display _kind _source _score start end usage_key description; do
+  local row separator
+  # TAB is IFS whitespace in Bash: consecutive delimiters collapse, which
+  # would shift the description into the empty usage_key column for dynamic
+  # filesystem candidates. The non-whitespace unit separator preserves blanks.
+  separator=$'\037'
+  while IFS= read -r row; do
+    IFS="$separator" read -r value display _kind _source _score start end usage_key description \
+      <<< "${row//$'\t'/$separator}"
     [[ -n "$value" ]] || continue
 
     __TERMSENSE_CANDIDATES+=("$value")
