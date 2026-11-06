@@ -3303,6 +3303,75 @@ mod tests {
     }
 
     #[test]
+    fn filesystem_path_arguments_work_across_common_commands() {
+        let root = std::env::temp_dir().join(format!(
+            "termsense-path-suggestions-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let folder = root.join("Documents Folder");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(root.join("Documents.txt"), "fixture").unwrap();
+
+        for prefix in [
+            "cd ",
+            "ls ",
+            "sudo ls ",
+            "git add ",
+            "code ",
+            "python3 ",
+            "echo ready && ls ",
+            "",
+        ] {
+            let typed = format!("{prefix}{}/Doc", root.display());
+            let candidates =
+                super::suggest(&[], &UsageState::default(), &typed, typed.len(), 30);
+            let expected = format!("{prefix}{}/Documents\\ Folder/", root.display());
+
+            let folder_candidate = candidates
+                .iter()
+                .find(|candidate| candidate.kind == "directory"
+                    && candidate.display_text == expected)
+                .unwrap_or_else(|| panic!("missing directory suggestion for {typed:?}"));
+
+            assert!(folder_candidate.usage_key.is_empty());
+            assert_eq!(
+                super::completed_line(
+                    &typed,
+                    typed.len(),
+                    folder_candidate.replacement_start,
+                    folder_candidate.replacement_end,
+                    &folder_candidate.insert_text,
+                ),
+                expected,
+            );
+        }
+
+        let typed = format!("cd {}/Doc", root.display());
+        let suggestions = super::suggest(&[], &UsageState::default(), &typed, typed.len(), 30);
+        assert!(!suggestions
+            .iter()
+            .any(|candidate| candidate.display_text.ends_with("Documents.txt")));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn path_roots_are_suggested_before_a_slash_is_typed() {
+        for (typed, expected) in [
+            ("cd ~", "cd ~/"),
+            ("cd .", "cd ./"),
+            ("cd ..", "cd ../"),
+        ] {
+            let candidates =
+                super::suggest(&[], &UsageState::default(), typed, typed.len(), 30);
+            assert!(candidates
+                .iter()
+                .any(|candidate| candidate.display_text == expected));
+        }
+    }
+
+    #[test]
     fn directory_query_preserves_tilde_prefix() {
         let (_, typed_parent, base) = directory_query("~/Doc").unwrap();
         assert_eq!(typed_parent, "~/");
