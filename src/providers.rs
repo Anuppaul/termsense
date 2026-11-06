@@ -3360,6 +3360,19 @@ mod tests {
             );
         }
 
+        for prefix in ["curl --output=", "tar --file="] {
+            let typed = format!("{prefix}{}/Doc", root.display());
+            let candidates =
+                super::suggest(&[], &UsageState::default(), &typed, typed.len(), 30);
+            let expected = format!("{prefix}{}/Documents\\ Folder/", root.display());
+            assert!(
+                candidates
+                    .iter()
+                    .any(|candidate| candidate.display_text == expected),
+                "missing assigned-folder completion for {typed:?}"
+            );
+        }
+
         let typed_quoted = format!("cd \"{}/Doc", root.display());
         let quoted_candidates = super::suggest(
             &[],
